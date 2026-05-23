@@ -1,0 +1,279 @@
+/* ── Register / Sign-up page ─────────────────────────────────────────────── */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ── Hero (same black banner as login) ───────────────────────────────────── */
+.hero {
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3.5rem 1.5rem 3rem;
+  gap: 1.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logoRow {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.iconWrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.wordmark {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+
+.wordmarkSub {
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.wordmarkMain {
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: #fff;
+  margin-top: 4px;
+}
+
+.heroTitle {
+  font-size: clamp(1.4rem, 3.5vw, 2.2rem);
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  color: #fff;
+  margin: 0;
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* ── Form panel ───────────────────────────────────────────────────────────── */
+.panel {
+  flex: 1;
+  background: #2a2a2a;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 3rem 1.5rem 5rem;
+}
+
+.box {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Error banner */
+.error {
+  font-size: 13px;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 4px;
+  padding: 0.6rem 0.875rem;
+  margin-bottom: 1rem;
+}
+
+/* ── Underline-style field (Conductor aesthetic) ─────────────────────────── */
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 1.5rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.125rem;
+  position: relative;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #9ca3af;
+  margin-bottom: 0.25rem;
+  margin-top: 1.25rem;
+}
+
+/* Underline input — no border-box, only bottom border */
+.input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #555;
+  border-radius: 0;
+  padding: 0.5rem 0 0.4rem;
+  font-size: 0.95rem;
+  color: #e5e7eb;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+
+.input::placeholder {
+  color: #6b7280;
+}
+
+.input:focus {
+  border-bottom-color: #0ea5e9;
+}
+
+/* Select uses same underline style */
+.select {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #555;
+  border-radius: 0;
+  padding: 0.5rem 0 0.4rem;
+  font-size: 0.95rem;
+  color: #e5e7eb;
+  outline: none;
+  width: 100%;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0 center;
+  padding-right: 1.25rem;
+  transition: border-color 0.15s;
+}
+
+.select:focus { border-bottom-color: #0ea5e9; }
+.select option { background: #2a2a2a; color: #e5e7eb; }
+
+/* ── Checkboxes ──────────────────────────────────────────────────────────── */
+.checkGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 2rem;
+}
+
+.checkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.checkbox {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  accent-color: #0d9488;
+  cursor: pointer;
+}
+
+.checkText {
+  font-size: 0.82rem;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+.checkLink {
+  color: #e5e7eb;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── reCAPTCHA mock ──────────────────────────────────────────────────────── */
+.captcha {
+  margin-top: 1.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #f9f9f9;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 0.875rem 1rem;
+  width: fit-content;
+}
+
+.captchaCheck {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #9ca3af;
+  border-radius: 3px;
+  background: #fff;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.captchaLabel {
+  font-size: 0.9rem;
+  color: #374151;
+  font-weight: 500;
+}
+
+.captchaLogo {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.captchaLogoText {
+  font-size: 9px;
+  color: #9ca3af;
+  letter-spacing: 0.05em;
+}
+
+/* ── Submit button ───────────────────────────────────────────────────────── */
+.submitBtn {
+  width: 100%;
+  background: #0d9488;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.07em;
+  border: none;
+  border-radius: 4px;
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+  margin-top: 2rem;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.submitBtn:hover:not(:disabled) { background: #0f766e; }
+.submitBtn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Already have an account */
+.signinLine {
+  font-size: 0.875rem;
+  color: #9ca3af;
+  text-align: center;
+  margin-top: 1.25rem;
+}
+
+.signinLink {
+  color: #e5e7eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.signinLink:hover { color: #0ea5e9; }

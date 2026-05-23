@@ -1,0 +1,250 @@
+/* ── Login page ─────────────────────────────────────────────────────────────
+   Imported directly by app/login/page.tsx so it is always bundled with the
+   login route, regardless of Tailwind v4 purge behaviour.
+──────────────────────────────────────────────────────────────────────────── */
+
+/* Full-page wrapper */
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ── Hero (black banner) ─────────────────────────────────────────────────── */
+.hero {
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 1.5rem 3.5rem;
+  gap: 2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logoRow {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.iconWrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.wordmark {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+
+.wordmarkSub {
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.wordmarkMain {
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: #fff;
+  margin-top: 4px;
+}
+
+.heroTitle {
+  font-size: clamp(1.75rem, 4.5vw, 2.8rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #fff;
+  margin: 0;
+  text-align: center;
+  line-height: 1.1;
+}
+
+/* ── Form panel (gray section) ───────────────────────────────────────────── */
+.panel {
+  flex: 1;
+  background: #2d2d2d;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 3.5rem 1.5rem 5rem;
+}
+
+.box {
+  width: 100%;
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+/* Error banner */
+.error {
+  font-size: 13px;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 4px;
+  padding: 0.6rem 0.875rem;
+}
+
+/* Form stack */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* Inputs — light background like the Conductor reference */
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #f0efeb;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  padding: 0.875rem 1rem;
+  font-size: 1rem;
+  color: #111;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input::placeholder {
+  color: #888;
+}
+
+.input:focus {
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.2);
+}
+
+/* Teal SIGN IN button */
+.submitBtn {
+  width: 100%;
+  background: #0d9488;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.07em;
+  border: none;
+  border-radius: 4px;
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+  margin-top: 0.25rem;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.submitBtn:hover:not(:disabled) {
+  background: #0f766e;
+}
+
+.submitBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Forgot password link */
+.forgot {
+  font-size: 0.9rem;
+  color: #9ca3af;
+  text-decoration: none;
+  transition: color 0.15s;
+  align-self: flex-start;
+}
+
+.forgot:hover {
+  color: #e5e7eb;
+}
+
+/* Horizontal rule */
+.divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0.125rem 0;
+}
+
+/* Google button */
+.googleBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background: #1a73e8;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+  border: none;
+  border-radius: 4px;
+  padding: 0.875rem 1rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.googleBtn:hover {
+  background: #1558b0;
+}
+
+/* Register link */
+.registerLine {
+  font-size: 0.9rem;
+  color: #9ca3af;
+  text-align: center;
+  margin: 0.125rem 0 0;
+}
+
+.registerLink {
+  color: #e5e7eb;
+  font-weight: 700;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.registerLink:hover {
+  color: #0ea5e9;
+}
+
+/* ── DCC plugin success state ──────────────────────────────────────────────── */
+.pluginSuccess {
+  text-align: center;
+  padding: 24px 0;
+}
+
+.pluginSuccessIcon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.pluginSuccessTitle {
+  color: #fff;
+  font-weight: 700;
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+
+.pluginSuccessHint {
+  color: #8888aa;
+  font-size: 14px;
+  margin: 0;
+}
+
+.debugLine {
+  color: #555577;
+  font-size: 11px;
+  text-align: center;
+  margin-top: 12px;
+  margin-bottom: 0;
+}
