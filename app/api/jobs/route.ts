@@ -18,15 +18,18 @@ function verifyToken(req: NextRequest) {
 // Map a DB row → the ApiJob shape the frontend expects
 function rowToJob(row: Record<string, unknown>) {
   return {
-    id:          String(row.id),
-    jobNumber:   row.job_number,
-    title:       row.title,
-    status:      row.status,
-    frames:      row.frames,
-    software:    row.software,
-    createdAt:   row.created_at,
-    blenderFile: row.blender_file ?? '',
-    outputs:     (row.outputs as string[]) ?? [],
+    id:             String(row.id),
+    jobNumber:      row.job_number,
+    title:          row.title,
+    status:         row.status,
+    frames:         row.frames,
+    software:       row.software,
+    createdAt:      row.created_at,
+    blenderFile:    row.blender_file ?? '',
+    outputs:        (row.outputs as string[]) ?? [],
+    manifest:       row.manifest ?? {},
+    assetsTotal:    row.assets_total ?? 0,
+    assetsUploaded: row.assets_uploaded ?? 0,
   }
 }
 
@@ -109,13 +112,19 @@ export async function PATCH(req: NextRequest) {
   await initDB()
 
   const id   = req.nextUrl.searchParams.get('id')   // numeric id from worker
-  const body = await req.json() as { status?: string; outputs?: string[]; assets_uploaded?: number }
+  const body = await req.json() as {
+    status?:          string
+    outputs?:         string[]
+    assets_uploaded?: number
+    manifest?:        Record<string, unknown>
+  }
 
   const rows = await sql`
     UPDATE jobs
     SET status          = COALESCE(${body.status ?? null}, status),
         outputs         = COALESCE(${body.outputs ? JSON.stringify(body.outputs) : null}::jsonb, outputs),
         assets_uploaded = COALESCE(${body.assets_uploaded ?? null}, assets_uploaded),
+        manifest        = COALESCE(${body.manifest ? JSON.stringify(body.manifest) : null}::jsonb, manifest),
         updated_at      = NOW()
     WHERE id = ${id}
     RETURNING *
