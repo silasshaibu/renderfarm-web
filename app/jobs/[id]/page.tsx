@@ -154,11 +154,25 @@ export default function JobDetailPage({ params }: PageProps) {
   const taskIndices    = Array.from({ length: taskEnd - taskStart }, (_, i) => taskStart + i)
 
   // Manifest + DB fields
-  const manifest     = job?.manifest ?? {}
-  const workerHost   = job?.workerHost        ?? ''
-  const outputPath   = job?.outputPath        ?? ''
-  const statusDesc   = job?.statusDescription ?? ''
-  const isPreemptible = !!(manifest.preemptible ?? true)
+  const manifest      = job?.manifest
+  const workerHost    = job?.workerHost        ?? ''
+  const outputPath    = job?.outputPath        ?? ''
+  const statusDesc    = job?.statusDescription ?? ''
+  const isPreemptible = !!(manifest?.preemptible ?? true)
+  const projectName   = manifest?.project ?? 'Default'
+  const taskCores     = manifest?.cores ?? 4
+  const taskMemoryGB  = manifest?.memory_gb ?? 16
+
+  // Instance chip label when no worker assigned yet — show from manifest
+  const instanceLabel = (() => {
+    if (manifest?.gpu_type) {
+      const n = manifest.gpus ?? 1
+      return `${n}× ${manifest.gpu_type.replace(/_/g, ' ')}`
+    }
+    if (manifest?.instance_type) return manifest.instance_type
+    return `${frames} frames`
+  })()
+
   // software label: "Blender 3.1.0 Linux" style
   const softwareRaw  = job?.software ?? ''   // e.g. "blender-4-1"
   const softwarePretty = softwareRaw
@@ -234,9 +248,10 @@ export default function JobDetailPage({ params }: PageProps) {
                   <line x1="12" y1="17" x2="12.01" y2="17"/>
                 </svg>
                 <span>
-                  <strong>Job is on hold</strong> — the render worker detected no GPU on this machine.
-                  Click <strong>Unhold</strong> once a GPU-capable worker comes online, or it will be
-                  released automatically when one does.
+                  <strong>Job is on hold</strong>
+                  {statusDesc
+                    ? ` — ${statusDesc}`
+                    : ' — Click Unhold when a suitable worker is available.'}
                 </span>
               </div>
             )}
@@ -262,7 +277,7 @@ export default function JobDetailPage({ params }: PageProps) {
                   stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                 </svg>
-                Default
+                {projectName}
               </span>
             </div>
 
@@ -288,7 +303,7 @@ export default function JobDetailPage({ params }: PageProps) {
                     <line x1="8" y1="21" x2="16" y2="21"/>
                     <line x1="12" y1="17" x2="12" y2="21"/>
                   </svg>
-                  {`${frames} frames`}
+                  {instanceLabel}
                 </span>
               )}
               {isPreemptible && <span className="job-spot-badge">spot</span>}
@@ -376,10 +391,13 @@ export default function JobDetailPage({ params }: PageProps) {
                     </td>
                     <td className="job-task-td">{frameNum}</td>
                     <td className="job-task-td"><TaskStatusCell status={tStatus} /></td>
-                    <td className="job-task-td right">4</td>
-                    <td className="job-task-td right">16 GB</td>
+                    <td className="job-task-td right">{taskCores}</td>
+                    <td className="job-task-td right">{taskMemoryGB} GB</td>
                     <td className="job-task-td center">
-                      <span className="inline-flex items-center justify-center w-5 h-5 rounded text-xs border bg-blue-500/20 border-blue-500/40 text-blue-400">✓</span>
+                      {isPreemptible
+                        ? <span className="inline-flex items-center justify-center w-5 h-5 rounded text-xs border bg-blue-500/20 border-blue-500/40 text-blue-400">✓</span>
+                        : <span className="inline-flex items-center justify-center w-5 h-5 rounded text-xs border bg-white/5 border-white/10 text-gray-600">—</span>
+                      }
                     </td>
                     <td className="job-task-td right text-gray-500">—</td>
                     <td className="job-task-td right text-gray-500">—</td>

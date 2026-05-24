@@ -63,6 +63,34 @@ export const projects = {
     request(`/projects/${id}`, { method: 'DELETE' }),
 }
 
+// ── Manifest (Blender addon submission payload) ───────────────────────────────
+export interface ManifestAsset {
+  path:       string        // original path on artist's machine
+  sha256:     string        // content hash for dedup
+  size_bytes: number
+  type:       'blend' | 'texture' | 'hdri' | 'font' | 'cache' | 'other'
+  blob_url?:  string        // resolved after upload to Vercel Blob
+}
+
+export interface ManifestData {
+  scene:           string
+  blender_version: string
+  renderer:        'CYCLES' | 'EEVEE' | 'WORKBENCH' | string
+  instance_type:   string   // e.g. "n1-standard-8"
+  machine_type?:   string   // e.g. "GPU" | "CPU"
+  gpu_type?:       string   // e.g. "NVIDIA_TESLA_T4"
+  gpus?:           number
+  frame_start:     number
+  frame_end:       number
+  chunk_size:      number
+  output_path?:    string   // destination on artist's machine (for Companion)
+  project?:        string
+  preemptible?:    boolean
+  cores?:          number
+  memory_gb?:      number
+  assets:          ManifestAsset[]
+}
+
 // ── Jobs ──────────────────────────────────────────────────────────────────────
 // Shape returned by our /api/jobs route
 export interface ApiJob {
@@ -81,7 +109,7 @@ export interface ApiJob {
   blenderFile:       string
   outputs:           string[]
   priority?:         number
-  manifest?:         Record<string, unknown>
+  manifest?:         ManifestData
   assetsTotal?:      number
   assetsUploaded?:   number
   outputPath?:       string   // e.g. "C:/Users/Artist/render"
