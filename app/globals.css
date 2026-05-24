@@ -1087,10 +1087,12 @@ select.cost-limit-field {
 .status-badge-downloaded { background: rgba(34,197,94,0.15);   color: #4ade80; }
 .status-badge-failed     { background: rgba(239,68,68,0.15);   color: #f87171; }
 .status-badge-pending    { background: rgba(156,163,175,0.15); color: #9ca3af; }
+.status-badge-holding    { background: rgba(245,158,11,0.15);  color: #fbbf24; }
 .status-dot-running    { background: #fbbf24; }
 .status-dot-downloaded { background: #4ade80; }
 .status-dot-failed     { background: #f87171; }
 .status-dot-pending    { background: #9ca3af; }
+.status-dot-holding    { background: #f59e0b; }
 
 /* ── Profile page ────────────────────────────────────────────────────────── */
 .profile-section-title { border-bottom: 1px solid rgba(255,255,255,0.07); }
@@ -1189,7 +1191,7 @@ select.cost-limit-field {
   font-size: 0.8rem;
   font-weight: 600;
   color: #9ca3af;
-  min-width: 140px;
+  min-width: 160px;
 }
 .job-detail-meta-value {
   font-size: 0.8rem;
@@ -1202,20 +1204,104 @@ select.cost-limit-field {
   margin: 1.25rem 0;
 }
 
-/* Status globe badge (large, top-right of detail card) */
+/* Status globe badge (large, top-right of detail card — matches Conductor) */
 .job-status-globe {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: inset -3px -3px 6px rgba(0,0,0,0.35), 2px 2px 6px rgba(0,0,0,0.3);
+}
+.job-status-globe-downloaded { background: radial-gradient(circle at 35% 32%, #34d399, #059669); }
+.job-status-globe-running    { background: radial-gradient(circle at 35% 32%, #fbbf24, #d97706); }
+.job-status-globe-failed     { background: radial-gradient(circle at 35% 32%, #f87171, #b91c1c); }
+.job-status-globe-pending    { background: radial-gradient(circle at 35% 32%, #9ca3af, #4b5563); }
+.job-status-globe-holding    { background: radial-gradient(circle at 35% 32%, #fbbf24, #d97706); }
+.job-status-globe-uploading  { background: radial-gradient(circle at 35% 32%, #c084fc, #7c3aed); }
+.job-status-globe-queued     { background: radial-gradient(circle at 35% 32%, #60a5fa, #2563eb); }
+
+/* ── Task table (inside job detail — like Conductor) ─────────────────────── */
+.job-task-wrap {
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.job-task-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.job-task-th {
+  background: rgba(255,255,255,0.04);
+  color: #6b7280;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  white-space: nowrap;
+  cursor: default;
+}
+.job-task-th.right { text-align: right; }
+.job-task-th.center { text-align: center; }
+.job-task-td {
+  padding: 7px 12px;
+  color: #d1d5db;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  white-space: nowrap;
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+}
+.job-task-td.right  { text-align: right; }
+.job-task-td.center { text-align: center; }
+.job-task-row { cursor: pointer; }
+.job-task-row:last-child .job-task-td { border-bottom: none; }
+.job-task-row:hover .job-task-td { background: rgba(255,255,255,0.025); }
+.job-task-row--selected .job-task-td { background: rgba(59,130,246,0.12); }
+
+/* small inline task-status badge */
+.task-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: inherit;
+}
+.task-status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.task-status--done     .task-status-dot { background: #4ade80; }
+.task-status--running  .task-status-dot { background: #fbbf24; }
+.task-status--failed   .task-status-dot { background: #f87171; }
+.task-status--holding  .task-status-dot { background: #f59e0b; }
+.task-status--pending  .task-status-dot { background: #6b7280; }
+.task-status--done     { color: #4ade80; }
+.task-status--running  { color: #fbbf24; }
+.task-status--failed   { color: #f87171; }
+.task-status--holding  { color: #fbbf24; }
+.task-status--pending  { color: #6b7280; }
+
+/* job detail meta row (user + project icons) */
+.job-meta-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 1.25rem;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: #9ca3af;
+  margin-bottom: 14px;
 }
-.job-status-globe-downloaded { background: radial-gradient(circle at 35% 35%, #60a5fa, #1d4ed8); }
-.job-status-globe-running    { background: radial-gradient(circle at 35% 35%, #fbbf24, #d97706); }
-.job-status-globe-failed     { background: radial-gradient(circle at 35% 35%, #f87171, #b91c1c); }
-.job-status-globe-pending    { background: radial-gradient(circle at 35% 35%, #9ca3af, #4b5563); }
+.job-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.job-meta-item svg { flex-shrink: 0; opacity: 0.7; }
 
 .job-instance-chip {
   display: inline-flex;
@@ -1658,9 +1744,18 @@ select.cost-limit-field {
   height: 100%;
   border-radius: 4px;
   transition: width 0.4s ease;
+  width: var(--fill-width, 0%);
 }
+
+/* Per-status status-label colours (job detail top-right text) */
+.job-status-label-queued    { color: #60a5fa; }
+.job-status-label-running   { color: #fbbf24; }
+.job-status-label-done      { color: #4ade80; }
+.job-status-label-failed    { color: #f87171; }
+.job-status-label-holding   { color: #fbbf24; }
+.job-status-label-uploading { color: #c084fc; }
 .job-progress-fill--queued    { background: #3b82f6; }
-.job-progress-fill--running   { background: #22d3ee; }
+.job-progress-fill--running   { background: #fbbf24; }  /* amber — matches Conductor */
 .job-progress-fill--done      { background: #22c55e; }
 .job-progress-fill--failed    { background: #ef4444; }
 .job-progress-fill--holding   { background: #f59e0b; }
