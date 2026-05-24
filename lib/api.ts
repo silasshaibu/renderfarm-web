@@ -66,15 +66,21 @@ export const projects = {
 // ── Jobs ──────────────────────────────────────────────────────────────────────
 // Shape returned by our /api/jobs route
 export interface ApiJob {
-  id:          string
-  jobNumber:   string
-  title:       string
-  status:      'queued' | 'running' | 'done' | 'failed'
-  frames:      string
-  software:    string
-  createdAt:   string
-  blenderFile: string
-  outputs:     string[]
+  id:                string
+  jobNumber:         string
+  title:             string
+  status:            'queued' | 'running' | 'done' | 'failed' | 'holding' | 'uploading'
+  frames:            string
+  software:          string
+  createdAt:         string
+  blenderFile:       string
+  outputs:           string[]
+  manifest?:         Record<string, unknown>
+  assetsTotal?:      number
+  assetsUploaded?:   number
+  outputPath?:       string   // e.g. "C:/Users/Artist/render"
+  workerHost?:       string   // hostname of the render worker that picked up the job
+  statusDescription?: string  // human-readable detail (e.g. "Waiting for GPU worker")
 }
 
 export const jobs = {

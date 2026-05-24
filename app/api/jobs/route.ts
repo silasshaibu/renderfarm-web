@@ -18,18 +18,21 @@ function verifyToken(req: NextRequest) {
 // Map a DB row → the ApiJob shape the frontend expects
 function rowToJob(row: Record<string, unknown>) {
   return {
-    id:             String(row.id),
-    jobNumber:      row.job_number,
-    title:          row.title,
-    status:         row.status,
-    frames:         row.frames,
-    software:       row.software,
-    createdAt:      row.created_at,
-    blenderFile:    row.blender_file ?? '',
-    outputs:        (row.outputs as string[]) ?? [],
-    manifest:       row.manifest ?? {},
-    assetsTotal:    row.assets_total ?? 0,
-    assetsUploaded: row.assets_uploaded ?? 0,
+    id:                 String(row.id),
+    jobNumber:          row.job_number,
+    title:              row.title,
+    status:             row.status,
+    frames:             row.frames,
+    software:           row.software,
+    createdAt:          row.created_at,
+    blenderFile:        row.blender_file ?? '',
+    outputs:            (row.outputs as string[]) ?? [],
+    manifest:           row.manifest ?? {},
+    assetsTotal:        row.assets_total    ?? 0,
+    assetsUploaded:     row.assets_uploaded ?? 0,
+    outputPath:         row.output_path         ?? '',
+    workerHost:         row.worker_host          ?? '',
+    statusDescription:  row.status_description   ?? '',
   }
 }
 
@@ -59,14 +62,16 @@ export async function POST(req: NextRequest) {
   await initDB()
 
   const data = await req.json() as {
-    title?:          string
-    frames?:         string
-    software?:       string
-    blender_file?:   string
-    status?:         string
-    manifest?:       Record<string, unknown>
-    assets_total?:   number
-    assets_uploaded?: number
+    title?:              string
+    frames?:             string
+    software?:           string
+    blender_file?:       string
+    output_folder?:      string   // Blender addon sends this
+    status?:             string
+    manifest?:           Record<string, unknown>
+    assets_total?:       number
+    assets_uploaded?:    number
+    status_description?: string
   }
 
   // Validate status — only allow known values
@@ -80,12 +85,18 @@ export async function POST(req: NextRequest) {
   const nextNum   = Number((countRows[0] as Record<string, unknown>).cnt) + 1
   const jobNumber = `RF-${String(nextNum).padStart(4, '0')}`
 
-  const manifest      = data.manifest      ? JSON.stringify(data.manifest)  : '{}'
-  const assetsTotal   = data.assets_total   ?? 0
-  const assetsUploaded = data.assets_uploaded ?? 0
+  const manifest           = data.manifest ? JSON.stringify(data.manifest) : '{}'
+  const assetsTotal        = data.assets_total    ?? 0
+  const assetsUploaded     = data.assets_uploaded  ?? 0
+  const outputPath         = data.output_folder    ?? ''
+  const statusDescription  = data.status_description ?? ''
 
   const rows = await sql`
-    INSERT INTO jobs (job_number, title, frames, software, blender_file, status, manifest, assets_total, assets_uploaded)
+    INSERT INTO jobs (
+      job_number, title, frames, software, blender_file, status,
+      manifest, assets_total, assets_uploaded,
+      output_path, status_description
+    )
     VALUES (
       ${jobNumber},
       ${data.title        ?? 'Untitled Job'},
@@ -95,7 +106,9 @@ export async function POST(req: NextRequest) {
       ${status},
       ${manifest}::jsonb,
       ${assetsTotal},
-      ${assetsUploaded}
+      ${assetsUploaded},
+      ${outputPath},
+      ${statusDescription}
     )
     RETURNING *
   `
@@ -104,28 +117,32 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ jobNumber: job.jobNumber, id: job.id }, { status: 201 })
 }
 
-// PATCH /api/jobs?id= — render worker updates status + output frame URLs
+// PATCH /api/jobs?id= — render worker (or dashboard) updates job fields
 export async function PATCH(req: NextRequest) {
   const user = verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()
 
-  const id   = req.nextUrl.searchParams.get('id')   // numeric id from worker
+  const id   = req.nextUrl.searchParams.get('id')
   const body = await req.json() as {
-    status?:          string
-    outputs?:         string[]
-    assets_uploaded?: number
-    manifest?:        Record<string, unknown>
+    status?:             string
+    outputs?:            string[]
+    assets_uploaded?:    number
+    manifest?:           Record<string, unknown>
+    worker_host?:        string   // set by render worker when it picks up the job
+    status_description?: string   // human-readable status detail
   }
 
   const rows = await sql`
     UPDATE jobs
-    SET status          = COALESCE(${body.status ?? null}, status),
-        outputs         = COALESCE(${body.outputs ? JSON.stringify(body.outputs) : null}::jsonb, outputs),
-        assets_uploaded = COALESCE(${body.assets_uploaded ?? null}, assets_uploaded),
-        manifest        = COALESCE(${body.manifest ? JSON.stringify(body.manifest) : null}::jsonb, manifest),
-        updated_at      = NOW()
+    SET status             = COALESCE(${body.status             ?? null}, status),
+        outputs            = COALESCE(${body.outputs            ? JSON.stringify(body.outputs) : null}::jsonb, outputs),
+        assets_uploaded    = COALESCE(${body.assets_uploaded    ?? null}, assets_uploaded),
+        manifest           = COALESCE(${body.manifest           ? JSON.stringify(body.manifest) : null}::jsonb, manifest),
+        worker_host        = COALESCE(${body.worker_host        ?? null}, worker_host),
+        status_description = COALESCE(${body.status_description ?? null}, status_description),
+        updated_at         = NOW()
     WHERE id = ${id}
     RETURNING *
   `

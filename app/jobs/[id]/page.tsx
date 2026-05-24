@@ -139,11 +139,14 @@ export default function JobDetailPage({ params }: PageProps) {
   const taskEnd        = Math.min(taskStart + TASK_PAGE_SIZE, total)
   const taskIndices    = Array.from({ length: taskEnd - taskStart }, (_, i) => taskStart + i)
 
-  // ── Manifest extras ─────────────────────────────────────────────────────────
-  const manifest     = (job as (ApiJob & { manifest?: Record<string, unknown> }) | null)?.manifest ?? {}
-  const machineType  = (manifest.machine_type as string | undefined) ?? '—'
-  const instanceType = (manifest.instance_type as string | undefined) ?? '—'
-  const renderer     = (manifest.renderer as string | undefined) ?? '—'
+  // ── Manifest + new DB fields ─────────────────────────────────────────────────
+  const manifest     = job.manifest ?? {}
+  const machineType  = (manifest.machine_type  as string | undefined) ?? ''
+  const instanceType = (manifest.instance_type as string | undefined) ?? ''
+  const renderer     = (manifest.renderer      as string | undefined) ?? ''
+  const outputPath   = job.outputPath        ?? ''
+  const workerHost   = job.workerHost        ?? ''
+  const statusDesc   = job.statusDescription ?? ''
 
   // ── Loading / error states ──────────────────────────────────────────────────
   const breadcrumb = (
@@ -219,7 +222,7 @@ export default function JobDetailPage({ params }: PageProps) {
             <span>Default</span>
           </div>
           {/* Instance chip */}
-          {machineType !== '—' && (
+          {machineType && (
             <div className="job-meta-item">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -228,20 +231,29 @@ export default function JobDetailPage({ params }: PageProps) {
               <span className="job-instance-chip">{instanceType} · {machineType}</span>
             </div>
           )}
+          {/* Worker host — the render machine that picked up the job */}
+          {workerHost && (
+            <div className="job-meta-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/>
+                <line x1="6" y1="6" x2="6.01" y2="6" strokeWidth="3"/><line x1="6" y1="18" x2="6.01" y2="18" strokeWidth="3"/>
+              </svg>
+              <span className="job-instance-chip">{workerHost}</span>
+            </div>
+          )}
         </div>
 
         {/* ── Metadata fields ───────────────────────────────────────────── */}
         <div className="flex flex-col gap-2 mb-5">
           {[
-            ['Job Title',       job.title],
-            ['Output Path',     '—'],
-            ['Software',        job.software ?? '—'],
-            ['Renderer',        renderer],
-            ['Frames',          frames],
-            ['Submitted',       fmtDate(job.createdAt)],
-            ['Status Description', job.status === 'holding'
-              ? 'Waiting for a GPU-capable render worker'
-              : ''],
+            ['Job Title',          job.title],
+            ['Output Path',        outputPath || '—'],
+            ['Software',           job.software ?? '—'],
+            ['Renderer',           renderer    || '—'],
+            ['Frames',             frames],
+            ['Submitted',          fmtDate(job.createdAt)],
+            ['Status Description', statusDesc  || ''],
           ].map(([k, v]) => v ? (
             <div key={k} className="flex gap-4 flex-wrap">
               <span className="job-detail-meta-label">{k}:</span>
@@ -272,10 +284,11 @@ export default function JobDetailPage({ params }: PageProps) {
             <span>Render progress</span>
             <span>{done} / {total} frames ({pct}%)</span>
           </div>
-          <div className="job-progress-track">
-            <div className={`job-progress-fill job-progress-fill--${job.status}`}
-              style={{ '--fill-width': `${pct}%` } as React.CSSProperties} />
-          </div>
+          <progress
+            className={`job-progress-bar job-progress-bar--${job.status}`}
+            value={pct}
+            max={100}
+          />
         </div>
 
         <hr className="job-detail-divider" />

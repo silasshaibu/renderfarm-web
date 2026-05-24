@@ -50,6 +50,9 @@ export async function initDB() {
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS manifest JSONB DEFAULT '{}'`
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS assets_total INT DEFAULT 0`
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS assets_uploaded INT DEFAULT 0`
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS output_path TEXT DEFAULT ''`
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS worker_host TEXT DEFAULT ''`
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS status_description TEXT DEFAULT ''`
 
   // Seed the default admin user if no users exist yet
   const existing = await sql`SELECT id FROM users LIMIT 1`
