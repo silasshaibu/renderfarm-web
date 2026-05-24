@@ -458,9 +458,12 @@ function CellContent({ col, job }: { col: Column; job: Job }) {
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
-export interface JobsTableProps { jobs: Job[] }
+export interface JobsTableProps {
+  jobs: Job[]
+  onActionDone?: () => void   // called after any context-menu PATCH so the parent can refetch
+}
 
-export default function JobsTable({ jobs }: JobsTableProps) {
+export default function JobsTable({ jobs, onActionDone }: JobsTableProps) {
   const [search,      setSearch]      = useState('')
   const [pageSize,    setPageSize]    = useState<PageSize>(10)
   const [page,        setPage]        = useState(1)
@@ -470,6 +473,7 @@ export default function JobsTable({ jobs }: JobsTableProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; job: Job } | null>(null)
   const [itModal,     setItModal]     = useState<Job | null>(null)   // Instance Type
   const [priModal,    setPriModal]    = useState<Job | null>(null)   // Priority
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const DEFAULT_HIDDEN = new Set<SortKey | '_actions'>(['project', 'title', 'progress'])
   const [visibleCols, setVisibleCols] = useState<Set<SortKey | '_actions'>>(
@@ -505,15 +509,27 @@ export default function JobsTable({ jobs }: JobsTableProps) {
 
   // ── PATCH helpers ───────────────────────────────────────────────────────────
   const patch = useCallback(async (job: Job, body: Record<string, unknown>) => {
-    const token = getToken() ?? ''
+    const token = getToken()
+    if (!token) { setActionError('Not authenticated — please log in again.'); return }
+
+    setActionError(null)
     try {
-      await fetch(`/api/jobs?id=${job.internalId}`, {
+      const res = await fetch(`/api/jobs?id=${job.internalId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
       })
-    } catch { /* next poll syncs */ }
-  }, [])
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }))
+        setActionError(`Action failed: ${err.message ?? res.statusText}`)
+        return
+      }
+      // Success — tell the parent to refetch immediately
+      onActionDone?.()
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Network error — action may not have saved.')
+    }
+  }, [onActionDone])
 
   const handleContextAction  = useCallback((job: Job, next: string) => patch(job, { status: next }), [patch])
   const handleInstanceTypeSave = useCallback((job: Job, gpuType: string, gpus: number) =>
@@ -554,6 +570,16 @@ export default function JobsTable({ jobs }: JobsTableProps) {
           <ColumnsPopover visible={visibleCols} onToggle={toggleCol} />
         </div>
       </div>
+
+      {/* ── Action error banner ──────────────────────────────────────────── */}
+      {actionError && (
+        <div className="flex items-center justify-between gap-3 text-sm text-red-400
+                        bg-red-500/10 border border-red-500/20 rounded px-4 py-2.5">
+          <span>{actionError}</span>
+          <button type="button" className="text-red-400 hover:text-red-300 text-lg leading-none"
+            onClick={() => setActionError(null)} aria-label="Dismiss">×</button>
+        </div>
+      )}
 
       {/* ── Table ────────────────────────────────────────────────────────── */}
       <div className="jobs-table-wrap" role="region" aria-label="Jobs list">

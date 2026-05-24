@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useEffect } from 'react'
+import { useMemo, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import JobsTable from '@/components/JobsTable'
 import { jobs as jobsApi, type ApiJob } from '@/lib/api'
@@ -10,12 +10,10 @@ import type { Job, JobStatus } from '@/types/job'
 
 // Map API job → UI Job shape
 function mapJob(j: ApiJob): Job {
-  // Count frames from "1-250" style range
-  const parts  = j.frames?.replace(/\s/g, '').split('-') ?? ['1']
-  const start  = parseInt(parts[0]) || 1
-  const end    = parts.length > 1 ? parseInt(parts[1]) || start : start
-  const total  = end - start + 1
-  const done   = j.status === 'done' ? total : 0
+  const parts   = j.frames?.replace(/\s/g, '').split('-') ?? ['1']
+  const start   = parseInt(parts[0]) || 1
+  const end     = parts.length > 1 ? parseInt(parts[1]) || start : start
+  const total   = end - start + 1
   const progress = j.status === 'done' ? 100 : j.status === 'running' ? 50 : 0
 
   const statusMap: Record<string, JobStatus> = {
@@ -48,15 +46,25 @@ function mapJob(j: ApiJob): Job {
 
 export default function JobsPage() {
   const router = useRouter()
-  const { data, loading, error } = useApiFetch(() => jobsApi.list())
+  const { data, loading, error, refetch } = useApiFetch(() => jobsApi.list())
 
-  const mappedJobs = useMemo(() => (data ?? []).map(mapJob), [data])
-  const runningCount = mappedJobs.filter((j) => j.status === 'running').length
+  // ── Poll every 5 s (same as job-detail page) ────────────────────────────────
+  const refetchRef = useRef(refetch)
+  refetchRef.current = refetch          // always up-to-date without re-running effect
 
   useEffect(() => {
-    if (!isLoggedIn() && !loading) {
-      router.push('/login')
-    }
+    const timer = setInterval(() => { refetchRef.current() }, 5000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const mappedJobs   = useMemo(() => (data ?? []).map(mapJob), [data])
+  const runningCount = mappedJobs.filter(j => j.status === 'running').length
+
+  // Called by JobsTable after any context-menu action so the list refreshes immediately
+  const handleActionDone = useCallback(() => { refetch() }, [refetch])
+
+  useEffect(() => {
+    if (!isLoggedIn() && !loading) router.push('/login')
   }, [loading, router])
 
   if (!isLoggedIn() && !loading) return null
@@ -92,7 +100,7 @@ export default function JobsPage() {
       {loading ? (
         <div className="text-sm text-gray-500 py-12 text-center">Loading jobs…</div>
       ) : (
-        <JobsTable jobs={mappedJobs} />
+        <JobsTable jobs={mappedJobs} onActionDone={handleActionDone} />
       )}
     </div>
   )
