@@ -1,23 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
+import { sql, initDB } from '@/lib/db'
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
-
-// ---------------------------------------------------------------------------
-// In-memory user store — replace with a real DB (Neon/Postgres) later.
-// Passwords are bcrypt hashes. To generate a new hash:
-//   node -e "const b=require('bcryptjs');console.log(b.hashSync('yourpassword',10))"
-// ---------------------------------------------------------------------------
-const USERS = [
-  {
-    id: '1',
-    email: 'silasshaibu2@gmail.com',
-    // Default password: "password123"  ← change this in .env.local via ADMIN_PASSWORD_HASH
-    passwordHash: process.env.ADMIN_PASSWORD_HASH ?? '$2b$10$Nq2zVJgDf.Xv4bX8reuT0u9/kyZiHkA0mlFSl928Yx7PMWA3YSBxy',
-    isAdmin: true,
-  },
-]
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,27 +13,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Email and password are required' }, { status: 400 })
     }
 
-    const user = USERS.find((u) => u.email.toLowerCase() === email.toLowerCase())
-    if (!user) {
+    await initDB()   // ensures tables exist + seeds default user on first run
+
+    const rows = await sql`SELECT * FROM users WHERE email = ${email.toLowerCase()} LIMIT 1`
+    if (!rows.length) {
       return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 })
     }
 
-    const valid = await bcrypt.compare(password, user.passwordHash)
+    const user  = rows[0] as { id: number; email: string; password_hash: string; is_admin: boolean }
+    const valid = await bcrypt.compare(password, user.password_hash)
     if (!valid) {
       return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 })
     }
 
     const access_token = jwt.sign(
-      { sub: user.id, email: user.email, isAdmin: user.isAdmin },
+      { sub: String(user.id), email: user.email, isAdmin: user.is_admin },
       JWT_SECRET,
       { expiresIn: '7d' },
     )
 
     return NextResponse.json({
       access_token,
-      user: { id: user.id, email: user.email, isAdmin: user.isAdmin },
+      user: { id: String(user.id), email: user.email, isAdmin: user.is_admin },
     })
-  } catch {
+  } catch (err) {
+    console.error('Login error:', err)
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 })
   }
 }

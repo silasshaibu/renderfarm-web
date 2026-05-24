@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
+import { sql, initDB } from '@/lib/db'
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
 
@@ -14,53 +15,37 @@ function verifyToken(req: NextRequest) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// In-memory job store — replace with Neon/Postgres later
-// ---------------------------------------------------------------------------
-interface Job {
-  id:          string
-  jobNumber:   string
-  title:       string
-  status:      'queued' | 'running' | 'done' | 'failed'
-  frames:      string
-  software:    string
-  createdAt:   string
-  blenderFile: string        // Vercel Blob URL of the uploaded scene zip
-  outputs:     string[]      // Rendered frame URLs — populated by the render worker
+// Map a DB row → the ApiJob shape the frontend expects
+function rowToJob(row: Record<string, unknown>) {
+  return {
+    id:          String(row.id),
+    jobNumber:   row.job_number,
+    title:       row.title,
+    status:      row.status,
+    frames:      row.frames,
+    software:    row.software,
+    createdAt:   row.created_at,
+    blenderFile: row.blender_file ?? '',
+    outputs:     (row.outputs as string[]) ?? [],
+  }
 }
 
-const jobs: Job[] = [
-  {
-    id: '1', jobNumber: 'RF-0001',
-    title: 'BMW_Cycles_Final.blend', status: 'done',
-    frames: '1-250', software: 'blender-3-6-lts',
-    createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-    blenderFile: '', outputs: [],
-  },
-  {
-    id: '2', jobNumber: 'RF-0002',
-    title: 'ProductShot_v3.blend', status: 'running',
-    frames: '1-100', software: 'blender-4-1',
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    blenderFile: '', outputs: [],
-  },
-]
-
-let nextId = 3
-
-// GET /api/jobs — list all jobs, or single job with ?jobNumber=RF-0001
+// GET /api/jobs — list all jobs, or single job with ?jobNumber=RF-XXXX
 export async function GET(req: NextRequest) {
   const user = verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
+  await initDB()
+
   const jobNumber = req.nextUrl.searchParams.get('jobNumber')
   if (jobNumber) {
-    const job = jobs.find(j => j.jobNumber === jobNumber)
-    if (!job) return NextResponse.json({ message: 'Job not found' }, { status: 404 })
-    return NextResponse.json(job)
+    const rows = await sql`SELECT * FROM jobs WHERE job_number = ${jobNumber}`
+    if (!rows.length) return NextResponse.json({ message: 'Job not found' }, { status: 404 })
+    return NextResponse.json(rowToJob(rows[0] as Record<string, unknown>))
   }
 
-  return NextResponse.json(jobs)
+  const rows = await sql`SELECT * FROM jobs ORDER BY created_at DESC`
+  return NextResponse.json(rows.map(r => rowToJob(r as Record<string, unknown>)))
 }
 
 // POST /api/jobs — create a new job (called by the Blender addon after upload)
@@ -68,46 +53,55 @@ export async function POST(req: NextRequest) {
   const user = verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
+  await initDB()
+
   const data = await req.json() as {
     title?:        string
     frames?:       string
     software?:     string
-    blender_file?: string   // blob URL of the uploaded scene zip
+    blender_file?: string
   }
 
-  const job: Job = {
-    id:          String(nextId),
-    jobNumber:   `RF-${String(nextId).padStart(4, '0')}`,
-    title:       data.title       ?? 'Untitled Job',
-    status:      'queued',
-    frames:      data.frames      ?? '1-1',
-    software:    data.software    ?? 'blender-4-1',
-    createdAt:   new Date().toISOString(),
-    blenderFile: data.blender_file ?? '',
-    outputs:     [],
-  }
+  // Generate next RF-XXXX number
+  const countRows = await sql`SELECT COUNT(*) AS cnt FROM jobs`
+  const nextNum   = Number((countRows[0] as Record<string, unknown>).cnt) + 1
+  const jobNumber = `RF-${String(nextNum).padStart(4, '0')}`
 
-  jobs.push(job)
-  nextId++
+  const rows = await sql`
+    INSERT INTO jobs (job_number, title, frames, software, blender_file)
+    VALUES (
+      ${jobNumber},
+      ${data.title       ?? 'Untitled Job'},
+      ${data.frames      ?? '1-1'},
+      ${data.software    ?? 'blender-4-1'},
+      ${data.blender_file ?? ''}
+    )
+    RETURNING *
+  `
 
+  const job = rowToJob(rows[0] as Record<string, unknown>)
   return NextResponse.json({ jobNumber: job.jobNumber, id: job.id }, { status: 201 })
 }
 
-// PATCH /api/jobs/[id] — worker updates status / adds output frame URLs
-// We handle this inline because App Router dynamic routes need a separate file,
-// but we expose a ?id= query param workaround for the worker.
+// PATCH /api/jobs?id= — render worker updates status + output frame URLs
 export async function PATCH(req: NextRequest) {
   const user = verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
-  const id   = req.nextUrl.searchParams.get('id')
-  const body = await req.json() as { status?: Job['status']; outputs?: string[] }
+  await initDB()
 
-  const job = jobs.find(j => j.id === id)
-  if (!job) return NextResponse.json({ message: 'Job not found' }, { status: 404 })
+  const id   = req.nextUrl.searchParams.get('id')   // numeric id from worker
+  const body = await req.json() as { status?: string; outputs?: string[] }
 
-  if (body.status)  job.status  = body.status
-  if (body.outputs) job.outputs = body.outputs
+  const rows = await sql`
+    UPDATE jobs
+    SET status     = COALESCE(${body.status ?? null}, status),
+        outputs    = COALESCE(${body.outputs ? JSON.stringify(body.outputs) : null}::jsonb, outputs),
+        updated_at = NOW()
+    WHERE id = ${id}
+    RETURNING *
+  `
 
-  return NextResponse.json(job)
+  if (!rows.length) return NextResponse.json({ message: 'Job not found' }, { status: 404 })
+  return NextResponse.json(rowToJob(rows[0] as Record<string, unknown>))
 }
