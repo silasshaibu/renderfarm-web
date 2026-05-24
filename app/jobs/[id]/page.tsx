@@ -380,14 +380,12 @@ export default function JobDetailPage({ params }: PageProps) {
                     onClick={() => setSelTask(isSelected ? null : idx)}>
 
                     <td className="job-task-td">
-                      {outputUrl
-                        ? <a href={outputUrl} target="_blank" rel="noreferrer"
-                            className="text-blue-400 hover:underline"
-                            onClick={e => e.stopPropagation()}>
-                            {padTask(idx)}
-                          </a>
-                        : padTask(idx)
-                      }
+                      <Link
+                        href={`/jobs/${id}/${padTask(idx)}/log`}
+                        className="text-blue-400 hover:underline"
+                        onClick={e => e.stopPropagation()}>
+                        {padTask(idx)}
+                      </Link>
                     </td>
                     <td className="job-task-td">{frameNum}</td>
                     <td className="job-task-td"><TaskStatusCell status={tStatus} /></td>

@@ -55,6 +55,22 @@ export async function initDB() {
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS status_description TEXT DEFAULT ''`
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 5`
 
+  // ── Task logs — written by the render worker during/after each frame ─────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS task_logs (
+      id           SERIAL PRIMARY KEY,
+      job_id       INTEGER NOT NULL,
+      frame_number INTEGER NOT NULL,
+      log_line     TEXT NOT NULL,
+      level        TEXT DEFAULT 'info',
+      created_at   TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_task_logs_job_frame
+      ON task_logs(job_id, frame_number)
+  `
+
   // Seed the default admin user if no users exist yet
   const existing = await sql`SELECT id FROM users LIMIT 1`
   if (existing.length === 0) {
