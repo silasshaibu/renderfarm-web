@@ -17,12 +17,22 @@ function mapJob(j: ApiJob): Job {
   const progress = j.status === 'done' ? 100 : j.status === 'running' ? 50 : 0
 
   const statusMap: Record<string, JobStatus> = {
-    done:      'downloaded',
-    queued:    'pending',
-    failed:    'failed',
-    running:   'running',
-    holding:   'holding',
-    uploading: 'pending',
+    // Legacy DB names → canonical JobStatus
+    done:   'downloaded',
+    queued: 'pending',
+    // All 12 Conductor statuses — explicit pass-through
+    upload_pending: 'upload_pending',
+    uploading:      'uploading',
+    sync_pending:   'sync_pending',
+    sync_failed:    'sync_failed',
+    syncing:        'syncing',
+    pending:        'pending',
+    holding:        'holding',
+    running:        'running',
+    success:        'success',
+    downloaded:     'downloaded',
+    failed:         'failed',
+    preempted:      'preempted',
   }
   const status = (statusMap[j.status] ?? j.status) as JobStatus
 

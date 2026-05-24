@@ -1323,16 +1323,30 @@ select.cost-limit-field {
 }
 
 /* ── StatusBadge — per-status colours ───────────────────────────────────── */
-.status-badge-running    { background: rgba(234,179,8,0.15);   color: #fbbf24; }
-.status-badge-downloaded { background: rgba(34,197,94,0.15);   color: #4ade80; }
-.status-badge-failed     { background: rgba(239,68,68,0.15);   color: #f87171; }
-.status-badge-pending    { background: rgba(156,163,175,0.15); color: #9ca3af; }
-.status-badge-holding    { background: rgba(245,158,11,0.15);  color: #fbbf24; }
-.status-dot-running    { background: #fbbf24; }
-.status-dot-downloaded { background: #4ade80; }
-.status-dot-failed     { background: #f87171; }
-.status-dot-pending    { background: #9ca3af; }
-.status-dot-holding    { background: #f59e0b; }
+.status-badge-upload_pending { background: rgba(59,130,246,0.15);  color: #60a5fa; }
+.status-badge-uploading      { background: rgba(168,85,247,0.15);  color: #c084fc; }
+.status-badge-sync_pending   { background: rgba(99,102,241,0.15);  color: #818cf8; }
+.status-badge-sync_failed    { background: rgba(249,115,22,0.15);  color: #fb923c; }
+.status-badge-syncing        { background: rgba(6,182,212,0.15);   color: #22d3ee; }
+.status-badge-pending        { background: rgba(156,163,175,0.15); color: #9ca3af; }
+.status-badge-holding        { background: rgba(245,158,11,0.15);  color: #fbbf24; }
+.status-badge-running        { background: rgba(234,179,8,0.15);   color: #fbbf24; }
+.status-badge-success        { background: rgba(34,197,94,0.15);   color: #4ade80; }
+.status-badge-downloaded     { background: rgba(34,197,94,0.15);   color: #4ade80; }
+.status-badge-failed         { background: rgba(239,68,68,0.15);   color: #f87171; }
+.status-badge-preempted      { background: rgba(249,115,22,0.15);  color: #fb923c; }
+.status-dot-upload_pending { background: #60a5fa; }
+.status-dot-uploading      { background: #c084fc; }
+.status-dot-sync_pending   { background: #818cf8; }
+.status-dot-sync_failed    { background: #fb923c; }
+.status-dot-syncing        { background: #22d3ee; }
+.status-dot-pending        { background: #9ca3af; }
+.status-dot-holding        { background: #f59e0b; }
+.status-dot-running        { background: #fbbf24; }
+.status-dot-success        { background: #4ade80; }
+.status-dot-downloaded     { background: #4ade80; }
+.status-dot-failed         { background: #f87171; }
+.status-dot-preempted      { background: #fb923c; }
 
 /* ── Profile page ────────────────────────────────────────────────────────── */
 .profile-section-title { border-bottom: 1px solid rgba(255,255,255,0.07); }

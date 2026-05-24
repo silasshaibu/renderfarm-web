@@ -469,7 +469,8 @@ export default function JobsTable({ jobs, onActionDone }: JobsTableProps) {
   const [page,        setPage]        = useState(1)
   const [sortKey,     setSortKey]     = useState<SortKey>('created')
   const [sortDir,     setSortDir]     = useState<SortDir>('desc')
-  const [selectedId,  setSelectedId]  = useState<string | null>(null)
+  const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set())
+  const [lastClickedId, setLastClickedId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; job: Job } | null>(null)
   const [itModal,     setItModal]     = useState<Job | null>(null)   // Instance Type
   const [priModal,    setPriModal]    = useState<Job | null>(null)   // Priority
@@ -601,11 +602,37 @@ export default function JobsTable({ jobs, onActionDone }: JobsTableProps) {
               </tr>
             ) : (
               paginated.map(job => {
-                const isSelected = selectedId === job.id
+                const isSelected = selectedIds.has(job.id)
                 return (
                   <tr key={job.id}
                     className={`jobs-tbody-row jobs-tbody-row--clickable${isSelected ? ' jobs-tbody-row--selected' : ''}`}
-                    onClick={() => setSelectedId(isSelected ? null : job.id)}
+                    onClick={e => {
+                      if (e.ctrlKey || e.metaKey) {
+                        // Ctrl/Cmd: toggle this row
+                        setSelectedIds(prev => {
+                          const next = new Set(prev)
+                          if (next.has(job.id)) next.delete(job.id); else next.add(job.id)
+                          return next
+                        })
+                        setLastClickedId(job.id)
+                      } else if (e.shiftKey && lastClickedId) {
+                        // Shift: select range from lastClickedId to this row
+                        const allIds = paginated.map(j => j.id)
+                        const a = allIds.indexOf(lastClickedId)
+                        const b = allIds.indexOf(job.id)
+                        const [lo, hi] = a < b ? [a, b] : [b, a]
+                        setSelectedIds(new Set(allIds.slice(lo, hi + 1)))
+                      } else {
+                        // Plain click: single-select (deselect if already the only one)
+                        if (selectedIds.size === 1 && selectedIds.has(job.id)) {
+                          setSelectedIds(new Set())
+                          setLastClickedId(null)
+                        } else {
+                          setSelectedIds(new Set([job.id]))
+                          setLastClickedId(job.id)
+                        }
+                      }
+                    }}
                     onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, job }) }}>
                     {visibleColumns.map(col => (
                       <td key={col.key} className={['jobs-td', col.align ?? ''].join(' ')}>

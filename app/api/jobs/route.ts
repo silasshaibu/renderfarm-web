@@ -75,8 +75,13 @@ export async function POST(req: NextRequest) {
     status_description?: string
   }
 
-  // Validate status — only allow known values
-  const VALID_STATUSES = ['queued', 'uploading', 'running', 'done', 'failed', 'holding']
+  // Validate status — all 12 Conductor statuses + legacy DB names
+  const VALID_STATUSES = [
+    'queued', 'done',                                        // legacy
+    'upload_pending', 'uploading', 'sync_pending',
+    'sync_failed', 'syncing', 'pending', 'holding',
+    'running', 'success', 'downloaded', 'failed', 'preempted',
+  ]
   const status = (data.status && VALID_STATUSES.includes(data.status))
     ? data.status
     : 'queued'

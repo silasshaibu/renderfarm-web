@@ -2,11 +2,18 @@ import type { JobStatus } from '@/types/job'
 
 // CSS class names per status — colours live in globals.css
 const STATUS_LABELS: Record<JobStatus, string> = {
-  downloaded: 'Downloaded',
-  running:    'Running',
-  failed:     'Failed',
-  pending:    'Pending',
-  holding:    'Holding',
+  upload_pending: 'Upload Pending',
+  uploading:      'Uploading',
+  sync_pending:   'Sync Pending',
+  sync_failed:    'Sync Failed',
+  syncing:        'Syncing',
+  pending:        'Pending',
+  holding:        'Holding',
+  running:        'Running',
+  success:        'Success',
+  downloaded:     'Downloaded',
+  failed:         'Failed',
+  preempted:      'Preempted',
 }
 
 interface StatusBadgeProps {
