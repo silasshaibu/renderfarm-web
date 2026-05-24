@@ -10,27 +10,32 @@ import type { Job, JobStatus } from '@/types/job'
 
 // Map API job → UI Job shape
 function mapJob(j: ApiJob): Job {
-  const total      = j.tasks.length
-  const done       = j.tasks.filter((t) => t.status === 'downloaded' || t.status === 'completed').length
-  const progress   = total > 0 ? Math.round((done / total) * 100) : 0
+  // Count frames from "1-250" style range
+  const parts  = j.frames?.replace(/\s/g, '').split('-') ?? ['1']
+  const start  = parseInt(parts[0]) || 1
+  const end    = parts.length > 1 ? parseInt(parts[1]) || start : start
+  const total  = end - start + 1
+  const done   = j.status === 'done' ? total : 0
+  const progress = j.status === 'done' ? 100 : j.status === 'running' ? 50 : 0
 
   const statusMap: Record<string, JobStatus> = {
-    completed: 'downloaded',
-    queued:    'pending',
-    cancelled: 'failed',
+    done:    'downloaded',
+    queued:  'pending',
+    failed:  'failed',
+    running: 'running',
   }
   const status = (statusMap[j.status] ?? j.status) as JobStatus
 
   return {
     id:          j.jobNumber,
-    user:        j.user.name.toLowerCase(),
+    user:        'user',
     status,
-    project:     j.project.name,
+    project:     'Default',
     title:       j.title,
     priority:    5,
-    cores:       j.cores,
-    memory:      '64 GB',
-    preemptible: j.gpuCount === 0,
+    cores:       4,
+    memory:      '16 GB',
+    preemptible: true,
     progress,
     tasks:       total,
     avgFrame:    '—',

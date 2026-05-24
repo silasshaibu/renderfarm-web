@@ -2,7 +2,7 @@
  * Renderfarm API client
  * All calls go through this module — swap BASE_URL for production.
  */
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+const BASE = process.env.NEXT_PUBLIC_API_URL || '/api'
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null
@@ -64,30 +64,27 @@ export const projects = {
 }
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
+// Shape returned by our /api/jobs route
 export interface ApiJob {
-  id: string; jobNumber: string; title: string; status: string
-  software: string; cores: number; gpuCount: number
-  project: { id: string; name: string }
-  user: { id: string; name: string; email: string }
-  tasks: { id: string; status: string }[]
-  usage: { coreHours: number; gpuHours: number; total: number } | null
-  createdAt: string; startedAt: string | null; completedAt: string | null
+  id:          string
+  jobNumber:   string
+  title:       string
+  status:      'queued' | 'running' | 'done' | 'failed'
+  frames:      string
+  software:    string
+  createdAt:   string
+  blenderFile: string
+  outputs:     string[]
 }
 
 export const jobs = {
-  list: (projectId?: string) =>
-    request<ApiJob[]>(`/jobs${projectId ? `?projectId=${projectId}` : ''}`),
+  list: () => request<ApiJob[]>('/jobs'),
 
-  get: (jobNumber: string) => request<ApiJob>(`/jobs/${jobNumber}`),
+  create: (data: { title: string; frames: string; software: string; blender_file?: string }) =>
+    request<{ jobNumber: string; id: string }>('/jobs', { method: 'POST', body: JSON.stringify(data) }),
 
-  stats: () =>
-    request<{ total: number; running: number; completed: number; failed: number }>('/jobs/stats'),
-
-  cancel: (jobNumber: string) =>
-    request(`/jobs/${jobNumber}/cancel`, { method: 'PATCH' }),
-
-  create: (data: { title: string; software: string; cores: number; gpuCount: number; projectId: string }) =>
-    request<ApiJob>('/jobs', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: { status?: string; outputs?: string[] }) =>
+    request<ApiJob>(`/jobs?id=${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
