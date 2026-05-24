@@ -28,7 +28,7 @@ interface InstanceTypeModalProps {
 }
 
 function InstanceTypeModal({ job, onClose, onSave }: InstanceTypeModalProps) {
-  const [gpuType, setGpuType] = useState(GPU_TYPES[0].label)
+  const [gpuType, setGpuType] = useState<string>(GPU_TYPES[0].label)
   const [gpus,    setGpus]    = useState<number>(1)
 
   const spec = GPU_TYPES.find(g => g.label === gpuType) ?? GPU_TYPES[0]

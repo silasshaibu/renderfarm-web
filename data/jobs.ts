@@ -6,6 +6,7 @@ import type { Job } from '@/types/job'
 export const MOCK_JOBS: Job[] = [
   {
     id: '00159',
+    internalId: '00159',
     user: 'silas',
     status: 'downloaded',
     project: 'ConductorRenderTest',
@@ -21,6 +22,7 @@ export const MOCK_JOBS: Job[] = [
   },
   {
     id: '00160',
+    internalId: '00160',
     user: 'silas',
     status: 'downloaded',
     project: 'ConductorRenderTest',
@@ -36,6 +38,7 @@ export const MOCK_JOBS: Job[] = [
   },
   {
     id: '00161',
+    internalId: '00161',
     user: 'silas',
     status: 'running',
     project: 'ConductorRenderTest',
