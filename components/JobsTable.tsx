@@ -7,105 +7,252 @@ import ProgressBar from '@/components/ProgressBar'
 import { getToken } from '@/lib/auth'
 
 // ---------------------------------------------------------------------------
-// Context-menu actions — matches Conductor's right-click menu
+// GPU type options — drives Instance Type modal
 // ---------------------------------------------------------------------------
-interface CtxAction {
-  label: string
-  next?: string       // new status to PATCH to
-  href?: boolean      // if true → navigate to job detail
-  divider?: boolean   // renders a separator line instead of a button
-  disabled?: boolean
+const GPU_TYPES = [
+  { label: 'RTX 4000', cores: 4,  memoryGb: 16 },
+  { label: 'RTX 3090', cores: 8,  memoryGb: 32 },
+  { label: 'A100',     cores: 16, memoryGb: 64 },
+  { label: 'V100',     cores: 8,  memoryGb: 32 },
+] as const
+
+const GPU_COUNTS = [1, 2, 4, 8] as const
+
+// ---------------------------------------------------------------------------
+// Instance Type modal
+// ---------------------------------------------------------------------------
+interface InstanceTypeModalProps {
+  job: Job
+  onClose: () => void
+  onSave: (job: Job, gpuType: string, gpus: number) => void
 }
 
-function getContextActions(status: string): CtxAction[] {
-  const edit: CtxAction   = { label: 'Edit', href: true }
-  const divider: CtxAction = { label: '', divider: true }
-  const hold: CtxAction   = { label: 'Hold',   next: 'holding' }
-  const unhold: CtxAction = { label: 'Unhold', next: 'queued'  }
-  const kill: CtxAction   = { label: 'Kill',   next: 'failed'  }
-  const retry: CtxAction  = { label: 'Retry',  next: 'queued'  }
+function InstanceTypeModal({ job, onClose, onSave }: InstanceTypeModalProps) {
+  const [gpuType, setGpuType] = useState(GPU_TYPES[0].label)
+  const [gpus,    setGpus]    = useState<number>(1)
 
-  switch (status) {
-    case 'running':
-      return [hold, kill, retry, divider, edit]
-    case 'holding':
-      return [unhold, hold, kill, retry, divider, edit]
-    case 'failed':
-      return [retry, kill, divider, edit]
-    case 'downloaded':
-      return [retry, divider, edit]
-    case 'pending':   // queued / uploading
-      return [hold, kill, divider, edit]
-    default:
-      return [divider, edit]
-  }
+  const spec = GPU_TYPES.find(g => g.label === gpuType) ?? GPU_TYPES[0]
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <div className="edit-modal-overlay" aria-modal="true" role="dialog"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="edit-modal-card">
+        <div className="edit-modal-header">Instance Type</div>
+        <div className="edit-modal-body">
+
+          {/* GPU Type */}
+          <div className="edit-modal-field">
+            <label htmlFor="gpu-type-select" className="edit-modal-label">GPU Type</label>
+            <select id="gpu-type-select" className="edit-modal-select"
+              value={gpuType}
+              onChange={e => setGpuType(e.target.value)}>
+              {GPU_TYPES.map(g => (
+                <option key={g.label} value={g.label}>{g.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* GPUs */}
+          <div className="edit-modal-field">
+            <label htmlFor="gpu-count-select" className="edit-modal-label">GPUs</label>
+            <select id="gpu-count-select" className="edit-modal-select"
+              value={gpus}
+              onChange={e => setGpus(Number(e.target.value))}>
+              {GPU_COUNTS.map(n => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Cores — read-only, derived */}
+          <div className="edit-modal-field">
+            <span className="edit-modal-label">Cores</span>
+            <span className="edit-modal-value">{spec.cores * gpus}</span>
+          </div>
+
+          {/* Memory — read-only, derived */}
+          <div className="edit-modal-field">
+            <span className="edit-modal-label">Memory</span>
+            <span className="edit-modal-value">{spec.memoryGb * gpus}</span>
+          </div>
+
+        </div>
+
+        <div className="edit-modal-footer">
+          <span className="edit-modal-job-label">Job {job.id}</span>
+          <div className="flex items-center gap-2">
+            <button type="button" className="edit-modal-ok"
+              onClick={() => { onSave(job, gpuType, gpus); onClose() }}>
+              Ok
+            </button>
+            <button type="button" className="edit-modal-cancel" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
-// Context menu component
+// Priority modal
 // ---------------------------------------------------------------------------
-interface ContextMenuProps {
+interface PriorityModalProps {
+  job: Job
+  onClose: () => void
+  onSave: (job: Job, priority: number) => void
+}
+
+function PriorityModal({ job, onClose, onSave }: PriorityModalProps) {
+  const [priority, setPriority] = useState(job.priority ?? 5)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <div className="edit-modal-overlay" aria-modal="true" role="dialog"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="edit-modal-card edit-modal-card--sm">
+        <div className="edit-modal-header">Priority</div>
+        <div className="edit-modal-body">
+          <div className="edit-modal-field">
+            <label htmlFor="priority-input" className="edit-modal-label">Priority</label>
+            <input id="priority-input" type="number" min={1} max={100}
+              className="edit-modal-input-num"
+              value={priority}
+              onChange={e => setPriority(Number(e.target.value))} />
+          </div>
+        </div>
+
+        <div className="edit-modal-footer">
+          <span className="edit-modal-job-label">Job {job.id}</span>
+          <div className="flex items-center gap-2">
+            <button type="button" className="edit-modal-ok"
+              onClick={() => { onSave(job, priority); onClose() }}>
+              Ok
+            </button>
+            <button type="button" className="edit-modal-cancel" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Context menu — matches Conductor's right-click menu exactly
+// ---------------------------------------------------------------------------
+interface CtxMenuProps {
   x: number
   y: number
   job: Job
-  onClose: () => void
-  onAction: (job: Job, next: string) => void
+  onClose:        () => void
+  onAction:       (job: Job, next: string) => void
+  onInstanceType: (job: Job) => void
+  onPriority:     (job: Job) => void
 }
 
-function ContextMenu({ x, y, job, onClose, onAction }: ContextMenuProps) {
+function ContextMenu({ x, y, job, onClose, onAction, onInstanceType, onPriority }: CtxMenuProps) {
   const ref = useRef<HTMLDivElement>(null)
-  const actions = getContextActions(job.status)
 
-  // Close on outside click or Escape
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [onClose])
-
-  // Position the menu imperatively so no JSX style prop is needed
+  // Position imperatively — avoids JSX style prop linter warning
   useEffect(() => {
     if (!ref.current) return
-    const top  = Math.min(y, window.innerHeight - 220)
-    const left = Math.min(x, window.innerWidth  - 200)
+    const top  = Math.min(y, window.innerHeight - 340)
+    const left = Math.min(x, window.innerWidth  - 220)
     ref.current.style.setProperty('top',  `${top}px`)
     ref.current.style.setProperty('left', `${left}px`)
   }, [x, y])
 
+  // Close on outside click or Escape
+  useEffect(() => {
+    const onKey  = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onDown = (e: MouseEvent)    => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown',   onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown',   onKey)
+    }
+  }, [onClose])
+
+  const btn = (label: string, next: string) => (
+    <button type="button" className="ctx-menu-item" role="menuitem"
+      onClick={() => { onAction(job, next); onClose() }}>
+      {label}
+    </button>
+  )
+
+  const isHolding    = job.status === 'holding'
+  const isDownloaded = job.status === 'downloaded'
+
   return (
-    <div ref={ref} className="ctx-menu" role="menu">
-      {actions.map((a, i) => {
-        if (a.divider) return <div key={i} className="ctx-menu-divider" role="separator" />
+    <div ref={ref} className="ctx-menu">
+      {/* Hold — disabled if already holding */}
+      <button type="button"
+        className={`ctx-menu-item${isHolding ? ' ctx-menu-item--disabled' : ''}`}
+        disabled={isHolding}
+        onClick={() => { if (!isHolding) { onAction(job, 'holding'); onClose() } }}>
+        Hold
+      </button>
 
-        if (a.href) {
-          return (
-            <a key={i} href={`/jobs/${job.id}`} className="ctx-menu-item" role="menuitem"
-              onClick={onClose}>
-              {a.label}
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
-            </a>
-          )
-        }
+      {btn('Kill',            'failed')}
+      {btn('Retry',           'queued')}
+      {btn('Retry Failed',    'queued')}
+      {btn('Retry Preempted', 'queued')}
+      {btn('Retry Sync',      'queued')}
 
-        return (
-          <button key={i} type="button" role="menuitem"
-            className={`ctx-menu-item${a.disabled ? ' ctx-menu-item--disabled' : ''}`}
-            disabled={a.disabled}
-            onClick={() => { if (a.next) onAction(job, a.next); onClose() }}>
-            {a.label}
+      {/* Reviewed — no status change */}
+      <button type="button" className="ctx-menu-item" onClick={() => onClose()}>
+        Reviewed
+      </button>
+
+      {/* Unhold — disabled unless holding or downloaded */}
+      <button type="button"
+        className={`ctx-menu-item${!isHolding && !isDownloaded ? ' ctx-menu-item--disabled' : ''}`}
+        disabled={!isHolding && !isDownloaded}
+        onClick={() => { if (isHolding || isDownloaded) { onAction(job, 'queued'); onClose() } }}>
+        Unhold
+      </button>
+
+      <div className="ctx-menu-divider" />
+
+      {/* Edit → with submenu — no nested menuitem roles to satisfy ARIA parent rule */}
+      <div className="ctx-menu-submenu-wrap">
+        <button type="button" className="ctx-menu-item ctx-menu-item--has-sub">
+          Edit
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+
+        <div className="ctx-submenu">
+          <button type="button" className="ctx-menu-item"
+            onClick={() => { onInstanceType(job); onClose() }}>
+            Instance Type
           </button>
-        )
-      })}
+          <button type="button" className="ctx-menu-item"
+            onClick={() => { onPriority(job); onClose() }}>
+            Priority
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -140,9 +287,6 @@ const COLUMNS: Column[] = [
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number]
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 function formatDate(iso: string): string {
   try {
     return new Intl.DateTimeFormat('en-GB', {
@@ -150,9 +294,7 @@ function formatDate(iso: string): string {
       hour: '2-digit', minute: '2-digit', hour12: false,
       timeZone: 'UTC',
     }).format(new Date(iso))
-  } catch {
-    return iso
-  }
+  } catch { return iso }
 }
 
 function sortJobs(jobs: Job[], key: SortKey, dir: SortDir): Job[] {
@@ -166,9 +308,6 @@ function sortJobs(jobs: Job[], key: SortKey, dir: SortDir): Job[] {
   })
 }
 
-// ---------------------------------------------------------------------------
-// Sort indicator
-// ---------------------------------------------------------------------------
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
   return (
     <span className={`ml-1 inline-flex ${active ? 'text-blue-400' : 'text-gray-600'}`}>
@@ -181,96 +320,74 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 }
 
 // ---------------------------------------------------------------------------
-// Column-visibility popover
+// Columns popover
 // ---------------------------------------------------------------------------
-interface ColumnsPopoverProps {
-  visible: Set<SortKey | '_actions'>
-  onToggle: (key: SortKey | '_actions') => void
-}
-
 const COLUMNS_BTN_ICON = (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" strokeWidth="2" aria-hidden="true">
-    <rect x="3" y="3" width="7" height="7" />
-    <rect x="14" y="3" width="7" height="7" />
-    <rect x="14" y="14" width="7" height="7" />
-    <rect x="3" y="14" width="7" height="7" />
+    <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+    <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
   </svg>
 )
 
-function ColumnsPopover({ visible, onToggle }: ColumnsPopoverProps) {
+function ColumnsPopover({ visible, onToggle }: { visible: Set<SortKey | '_actions'>; onToggle: (k: SortKey | '_actions') => void }) {
   const [open, setOpen] = useState(false)
-
-  const panel = open ? (
-    <>
-      <div className="fixed inset-0 z-10" aria-hidden="true" onClick={() => setOpen(false)} />
-      <div className="col-popover-panel" aria-label="Toggle columns">
-        {COLUMNS.map((col) => (
-          <label key={col.key}
-            className="flex items-center gap-2.5 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer">
-            <input type="checkbox" className="accent-blue-500"
-              checked={visible.has(col.key)} onChange={() => onToggle(col.key)} />
-            {col.label}
-          </label>
-        ))}
-      </div>
-    </>
-  ) : null
-
   return (
     <div className="relative">
       {open ? (
-        <button type="button" aria-expanded="true" className="col-popover-btn"
-          onClick={() => setOpen(false)}>
+        <button type="button" aria-expanded="true" className="col-popover-btn" onClick={() => setOpen(false)}>
           {COLUMNS_BTN_ICON} Columns
         </button>
       ) : (
-        <button type="button" aria-expanded="false" className="col-popover-btn"
-          onClick={() => setOpen(true)}>
+        <button type="button" aria-expanded="false" className="col-popover-btn" onClick={() => setOpen(true)}>
           {COLUMNS_BTN_ICON} Columns
         </button>
       )}
-      {panel}
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" aria-hidden="true" onClick={() => setOpen(false)} />
+          <div className="col-popover-panel" aria-label="Toggle columns">
+            {COLUMNS.map(col => (
+              <label key={col.key}
+                className="flex items-center gap-2.5 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer">
+                <input type="checkbox" className="accent-blue-500"
+                  checked={visible.has(col.key)} onChange={() => onToggle(col.key)} />
+                {col.label}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// <th> with static aria-sort literals
+// <th>
 // ---------------------------------------------------------------------------
-interface ThProps {
-  col: Column; sortKey: SortKey; sortDir: SortDir; onSort: (key: SortKey) => void
-}
-function Th({ col, sortKey: sk, sortDir: sd, onSort }: ThProps) {
+function Th({ col, sortKey: sk, sortDir: sd, onSort }: { col: Column; sortKey: SortKey; sortDir: SortDir; onSort: (k: SortKey) => void }) {
   const isSortable = col.sortable && col.key !== '_actions'
   const isActive   = sk === col.key
   const cls = ['jobs-th', isSortable ? 'sortable' : '', col.align ?? '', col.widthClass ?? ''].join(' ')
   const icon = isSortable ? <SortIcon active={isActive} dir={isActive ? sd : 'asc'} /> : null
-  const handleClick = isSortable ? () => onSort(col.key as SortKey) : undefined
-
-  if (isActive && sd === 'asc')  return <th scope="col" className={cls} aria-sort="ascending"  onClick={handleClick}>{col.label}{icon}</th>
-  if (isActive && sd === 'desc') return <th scope="col" className={cls} aria-sort="descending" onClick={handleClick}>{col.label}{icon}</th>
-  return <th scope="col" className={cls} onClick={handleClick}>{col.label}{icon}</th>
+  const click = isSortable ? () => onSort(col.key as SortKey) : undefined
+  if (isActive && sd === 'asc')  return <th scope="col" className={cls} aria-sort="ascending"  onClick={click}>{col.label}{icon}</th>
+  if (isActive && sd === 'desc') return <th scope="col" className={cls} aria-sort="descending" onClick={click}>{col.label}{icon}</th>
+  return <th scope="col" className={cls} onClick={click}>{col.label}{icon}</th>
 }
 
 // ---------------------------------------------------------------------------
 // Pagination button
 // ---------------------------------------------------------------------------
-interface PagBtnProps {
-  label: string; ariaLabel?: string; onClick?: () => void; disabled?: boolean; active?: boolean
-}
-function PagBtn({ label, ariaLabel, onClick, disabled = false, active = false }: PagBtnProps) {
+function PagBtn({ label, ariaLabel, onClick, disabled = false, active = false }: { label: string; ariaLabel?: string; onClick?: () => void; disabled?: boolean; active?: boolean }) {
   const isWord = label === 'Previous' || label === 'Next'
   return (
     <button type="button" onClick={onClick} disabled={disabled}
       aria-label={ariaLabel} aria-current={active ? 'page' : undefined}
-      className={[
-        'px-3 py-1.5 rounded text-xs font-medium transition-colors border',
+      className={['px-3 py-1.5 rounded text-xs font-medium transition-colors border',
         isWord ? 'min-w-[80px]' : 'min-w-[28px]',
-        active
-          ? 'bg-blue-600 border-blue-600 text-white'
-          : disabled
-          ? 'border-white/5 text-gray-700 cursor-not-allowed bg-transparent'
+        active ? 'bg-blue-600 border-blue-600 text-white'
+          : disabled ? 'border-white/5 text-gray-700 cursor-not-allowed bg-transparent'
           : 'border-white/10 text-gray-400 hover:text-white hover:border-white/20 hover:bg-white/5',
       ].join(' ')}>
       {label}
@@ -295,21 +412,16 @@ function CellContent({ col, job }: { col: Column; job: Job }) {
     case 'progress':    return <ProgressBar value={job.progress} />
     case 'preemptible':
       return (
-        <span className={[
-          'inline-flex items-center justify-center w-5 h-5 rounded text-xs border',
-          job.preemptible
-            ? 'bg-blue-500/20 border-blue-500/40 text-blue-400'
-            : 'border-white/10 text-gray-700',
+        <span className={['inline-flex items-center justify-center w-5 h-5 rounded text-xs border',
+          job.preemptible ? 'bg-blue-500/20 border-blue-500/40 text-blue-400' : 'border-white/10 text-gray-700',
         ].join(' ')} aria-label={job.preemptible ? 'Yes' : 'No'}>
           {job.preemptible ? '✓' : '—'}
         </span>
       )
     case 'created':
       return <time dateTime={job.created} className="text-gray-400 font-mono text-xs">{formatDate(job.created)}</time>
-    case 'memory':
-      return <span className="font-mono text-gray-300">{job.memory}</span>
-    case 'avgFrame':
-      return <span className="font-mono text-gray-300">{job.avgFrame}</span>
+    case 'memory':   return <span className="font-mono text-gray-300">{job.memory}</span>
+    case 'avgFrame': return <span className="font-mono text-gray-300">{job.avgFrame}</span>
     default: {
       const val = job[col.key as SortKey]
       return <span className="text-gray-300">{String(val)}</span>
@@ -318,37 +430,39 @@ function CellContent({ col, job }: { col: Column; job: Job }) {
 }
 
 // ---------------------------------------------------------------------------
-// Main exported component
+// Main component
 // ---------------------------------------------------------------------------
 export interface JobsTableProps { jobs: Job[] }
 
 export default function JobsTable({ jobs }: JobsTableProps) {
-  const [search,       setSearch]       = useState('')
-  const [pageSize,     setPageSize]     = useState<PageSize>(10)
-  const [page,         setPage]         = useState(1)
-  const [sortKey,      setSortKey]      = useState<SortKey>('created')
-  const [sortDir,      setSortDir]      = useState<SortDir>('desc')
-  const [selectedId,   setSelectedId]   = useState<string | null>(null)   // left-click selection
-  const [contextMenu,  setContextMenu]  = useState<{ x: number; y: number; job: Job } | null>(null)
+  const [search,      setSearch]      = useState('')
+  const [pageSize,    setPageSize]    = useState<PageSize>(10)
+  const [page,        setPage]        = useState(1)
+  const [sortKey,     setSortKey]     = useState<SortKey>('created')
+  const [sortDir,     setSortDir]     = useState<SortDir>('desc')
+  const [selectedId,  setSelectedId]  = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; job: Job } | null>(null)
+  const [itModal,     setItModal]     = useState<Job | null>(null)   // Instance Type
+  const [priModal,    setPriModal]    = useState<Job | null>(null)   // Priority
 
   const DEFAULT_HIDDEN = new Set<SortKey | '_actions'>(['project', 'title', 'progress'])
   const [visibleCols, setVisibleCols] = useState<Set<SortKey | '_actions'>>(
-    new Set(COLUMNS.map((c) => c.key).filter((k) => !DEFAULT_HIDDEN.has(k)))
+    new Set(COLUMNS.map(c => c.key).filter(k => !DEFAULT_HIDDEN.has(k)))
   )
 
-  const filtered = useMemo(() => {
+  const filtered   = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return jobs
-    return jobs.filter((job) => Object.values(job).some((v) => String(v).toLowerCase().includes(q)))
+    return jobs.filter(job => Object.values(job).some(v => String(v).toLowerCase().includes(q)))
   }, [jobs, search])
 
-  const sorted   = useMemo(() => sortJobs(filtered, sortKey, sortDir), [filtered, sortKey, sortDir])
+  const sorted     = useMemo(() => sortJobs(filtered, sortKey, sortDir), [filtered, sortKey, sortDir])
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
   const safePage   = Math.min(page, totalPages)
   const paginated  = sorted.slice((safePage - 1) * pageSize, safePage * pageSize)
 
-  const handleSort = useCallback((key: SortKey) => {
-    if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+  const handleSort     = useCallback((key: SortKey) => {
+    if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('asc') }
     setPage(1)
   }, [sortKey])
@@ -356,28 +470,31 @@ export default function JobsTable({ jobs }: JobsTableProps) {
   const handleSearch   = useCallback((e: React.ChangeEvent<HTMLInputElement>)  => { setSearch(e.target.value); setPage(1) }, [])
   const handlePageSize = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => { setPageSize(Number(e.target.value) as PageSize); setPage(1) }, [])
   const toggleCol      = useCallback((key: SortKey | '_actions') => {
-    setVisibleCols((prev) => {
+    setVisibleCols(prev => {
       const next = new Set(prev)
-      if (next.has(key) && next.size > 1) next.delete(key)
-      else next.add(key)
+      if (next.has(key) && next.size > 1) next.delete(key); else next.add(key)
       return next
     })
   }, [])
 
-  // ── Context-menu action → PATCH API ────────────────────────────────────────
-  const handleContextAction = useCallback(async (job: Job, nextStatus: string) => {
+  // ── PATCH helpers ───────────────────────────────────────────────────────────
+  const patch = useCallback(async (job: Job, body: Record<string, unknown>) => {
     const token = getToken() ?? ''
     try {
       await fetch(`/api/jobs?id=${job.internalId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify(body),
       })
-      // The parent page auto-polls every 5 s; optimistic UI isn't needed
-    } catch { /* silent — next poll will reflect server state */ }
+    } catch { /* next poll syncs */ }
   }, [])
 
-  const visibleColumns = COLUMNS.filter((c) => visibleCols.has(c.key))
+  const handleContextAction  = useCallback((job: Job, next: string) => patch(job, { status: next }), [patch])
+  const handleInstanceTypeSave = useCallback((job: Job, gpuType: string, gpus: number) =>
+    patch(job, { manifest: { gpu_type: gpuType, gpus, instance_type: 'GPU' } }), [patch])
+  const handlePrioritySave   = useCallback((job: Job, priority: number) => patch(job, { priority }), [patch])
+
+  const visibleColumns = COLUMNS.filter(c => visibleCols.has(c.key))
   const startItem = sorted.length === 0 ? 0 : (safePage - 1) * pageSize + 1
   const endItem   = Math.min(safePage * pageSize, sorted.length)
 
@@ -389,10 +506,9 @@ export default function JobsTable({ jobs }: JobsTableProps) {
         <div className="flex items-center gap-2 text-sm text-gray-400">
           <label htmlFor="page-size" className="sr-only">Entries per page</label>
           <span aria-hidden="true">Show</span>
-          <select id="page-size" title="Entries per page"
-            value={pageSize} onChange={handlePageSize}
-            className="table-input px-2 py-1.5">
-            {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+          <select id="page-size" title="Entries per page" value={pageSize}
+            onChange={handlePageSize} className="table-input px-2 py-1.5">
+            {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
           <span aria-hidden="true">entries</span>
         </div>
@@ -418,12 +534,11 @@ export default function JobsTable({ jobs }: JobsTableProps) {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="jobs-thead-row">
-              {visibleColumns.map((col) => (
+              {visibleColumns.map(col => (
                 <Th key={col.key} col={col} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
               ))}
             </tr>
           </thead>
-
           <tbody>
             {paginated.length === 0 ? (
               <tr>
@@ -433,19 +548,14 @@ export default function JobsTable({ jobs }: JobsTableProps) {
                 </td>
               </tr>
             ) : (
-              paginated.map((job) => {
+              paginated.map(job => {
                 const isSelected = selectedId === job.id
                 return (
                   <tr key={job.id}
                     className={`jobs-tbody-row jobs-tbody-row--clickable${isSelected ? ' jobs-tbody-row--selected' : ''}`}
-                    /* Left click → select row */
                     onClick={() => setSelectedId(isSelected ? null : job.id)}
-                    /* Right click → context menu */
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      setContextMenu({ x: e.clientX, y: e.clientY, job })
-                    }}>
-                    {visibleColumns.map((col) => (
+                    onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, job }) }}>
+                    {visibleColumns.map(col => (
                       <td key={col.key} className={['jobs-td', col.align ?? ''].join(' ')}>
                         <CellContent col={col} job={job} />
                       </td>
@@ -458,54 +568,63 @@ export default function JobsTable({ jobs }: JobsTableProps) {
         </table>
       </div>
 
-      {/* ── Pagination footer ─────────────────────────────────────────────── */}
+      {/* ── Pagination ───────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between text-sm text-gray-500 flex-wrap gap-3">
         <span aria-live="polite" aria-atomic="true">
           {sorted.length === 0 ? 'No entries' : (
             <>
-              Showing{' '}
-              <span className="text-gray-300 font-medium">{startItem}–{endItem}</span>
+              Showing <span className="text-gray-300 font-medium">{startItem}–{endItem}</span>
               {' of '}
               <span className="text-gray-300 font-medium">{sorted.length}</span> entries
-              {filtered.length !== jobs.length && (
-                <span className="text-gray-600"> (filtered from {jobs.length})</span>
-              )}
+              {filtered.length !== jobs.length && <span className="text-gray-600"> (filtered from {jobs.length})</span>}
             </>
           )}
         </span>
-
         <nav aria-label="Table pagination" className="flex items-center gap-2">
           <PagBtn label="Previous" ariaLabel="Previous page"
-            disabled={safePage === 1} onClick={() => setPage((p) => p - 1)} />
-
+            disabled={safePage === 1} onClick={() => setPage(p => p - 1)} />
           <div className="flex items-center gap-1.5 text-sm text-gray-400">
             <span>Page</span>
             <input type="number" min={1} max={totalPages} value={safePage}
               aria-label="Current page"
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                if (v >= 1 && v <= totalPages) setPage(v)
-              }}
-              className="table-input w-12 px-2 py-1 text-center text-gray-200 text-sm"
-            />
+              onChange={e => { const v = Number(e.target.value); if (v >= 1 && v <= totalPages) setPage(v) }}
+              className="table-input w-12 px-2 py-1 text-center text-gray-200 text-sm" />
             <span>of {totalPages}</span>
           </div>
-
           <PagBtn label="Next" ariaLabel="Next page"
-            disabled={safePage === totalPages} onClick={() => setPage((p) => p + 1)} />
+            disabled={safePage === totalPages} onClick={() => setPage(p => p + 1)} />
         </nav>
       </div>
 
-      {/* ── Right-click context menu ──────────────────────────────────────── */}
+      {/* ── Context menu ─────────────────────────────────────────────────── */}
       {contextMenu && (
         <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          job={contextMenu.job}
+          x={contextMenu.x} y={contextMenu.y} job={contextMenu.job}
           onClose={() => setContextMenu(null)}
           onAction={handleContextAction}
+          onInstanceType={job => { setItModal(job) }}
+          onPriority={job => { setPriModal(job) }}
         />
       )}
+
+      {/* ── Instance Type modal ───────────────────────────────────────────── */}
+      {itModal && (
+        <InstanceTypeModal
+          job={itModal}
+          onClose={() => setItModal(null)}
+          onSave={handleInstanceTypeSave}
+        />
+      )}
+
+      {/* ── Priority modal ────────────────────────────────────────────────── */}
+      {priModal && (
+        <PriorityModal
+          job={priModal}
+          onClose={() => setPriModal(null)}
+          onSave={handlePrioritySave}
+        />
+      )}
+
     </div>
   )
 }

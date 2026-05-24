@@ -35,7 +35,7 @@ function mapJob(j: ApiJob): Job {
     status,
     project:     'Default',
     title:       j.title,
-    priority:    5,
+    priority:    j.priority ?? 5,
     cores:       4,
     memory:      '16 GB',
     preemptible: true,

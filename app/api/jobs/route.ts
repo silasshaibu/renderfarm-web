@@ -24,6 +24,7 @@ function rowToJob(row: Record<string, unknown>) {
     status:             row.status,
     frames:             row.frames,
     software:           row.software,
+    priority:           row.priority           ?? 5,
     createdAt:          row.created_at,
     blenderFile:        row.blender_file ?? '',
     outputs:            (row.outputs as string[]) ?? [],
@@ -130,18 +131,25 @@ export async function PATCH(req: NextRequest) {
     outputs?:            string[]
     assets_uploaded?:    number
     manifest?:           Record<string, unknown>
-    worker_host?:        string   // set by render worker when it picks up the job
-    status_description?: string   // human-readable status detail
+    worker_host?:        string
+    status_description?: string
+    priority?:           number
   }
+
+  // manifest: merge new keys into existing jsonb (don't replace the whole object)
+  const manifestPatch = body.manifest ? JSON.stringify(body.manifest) : null
 
   const rows = await sql`
     UPDATE jobs
     SET status             = COALESCE(${body.status             ?? null}, status),
         outputs            = COALESCE(${body.outputs            ? JSON.stringify(body.outputs) : null}::jsonb, outputs),
         assets_uploaded    = COALESCE(${body.assets_uploaded    ?? null}, assets_uploaded),
-        manifest           = COALESCE(${body.manifest           ? JSON.stringify(body.manifest) : null}::jsonb, manifest),
+        manifest           = CASE WHEN ${manifestPatch}::text IS NOT NULL
+                               THEN manifest || ${manifestPatch}::jsonb
+                               ELSE manifest END,
         worker_host        = COALESCE(${body.worker_host        ?? null}, worker_host),
         status_description = COALESCE(${body.status_description ?? null}, status_description),
+        priority           = COALESCE(${body.priority           ?? null}, priority),
         updated_at         = NOW()
     WHERE id = ${id}
     RETURNING *

@@ -75,6 +75,7 @@ export interface ApiJob {
   createdAt:         string
   blenderFile:       string
   outputs:           string[]
+  priority?:         number
   manifest?:         Record<string, unknown>
   assetsTotal?:      number
   assetsUploaded?:   number

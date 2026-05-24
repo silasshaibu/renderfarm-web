@@ -53,6 +53,7 @@ export async function initDB() {
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS output_path TEXT DEFAULT ''`
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS worker_host TEXT DEFAULT ''`
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS status_description TEXT DEFAULT ''`
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 5`
 
   // Seed the default admin user if no users exist yet
   const existing = await sql`SELECT id FROM users LIMIT 1`
