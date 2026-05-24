@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Validate status — only allow known values
-  const VALID_STATUSES = ['queued', 'uploading', 'running', 'done', 'failed']
+  const VALID_STATUSES = ['queued', 'uploading', 'running', 'done', 'failed', 'holding']
   const status = (data.status && VALID_STATUSES.includes(data.status))
     ? data.status
     : 'queued'

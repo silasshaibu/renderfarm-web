@@ -1641,10 +1641,12 @@ select.cost-limit-field {
   display: inline-block;
   flex-shrink: 0;
 }
-.job-status-dot--queued  { background: #3b82f6; }
-.job-status-dot--running { background: #22d3ee; }
-.job-status-dot--done    { background: #22c55e; }
-.job-status-dot--failed  { background: #ef4444; }
+.job-status-dot--queued    { background: #3b82f6; }
+.job-status-dot--running   { background: #22d3ee; }
+.job-status-dot--done      { background: #22c55e; }
+.job-status-dot--failed    { background: #ef4444; }
+.job-status-dot--holding   { background: #f59e0b; }
+.job-status-dot--uploading { background: #a78bfa; }
 
 .job-progress-track {
   background: #1e1e2e;
@@ -1657,7 +1659,58 @@ select.cost-limit-field {
   border-radius: 4px;
   transition: width 0.4s ease;
 }
-.job-progress-fill--queued  { background: #3b82f6; }
-.job-progress-fill--running { background: #22d3ee; }
-.job-progress-fill--done    { background: #22c55e; }
-.job-progress-fill--failed  { background: #ef4444; }
+.job-progress-fill--queued    { background: #3b82f6; }
+.job-progress-fill--running   { background: #22d3ee; }
+.job-progress-fill--done      { background: #22c55e; }
+.job-progress-fill--failed    { background: #ef4444; }
+.job-progress-fill--holding   { background: #f59e0b; }
+.job-progress-fill--uploading { background: #a78bfa; }
+
+/* ── Job action buttons (Hold / Unhold / Retry / Kill) ───────────────────── */
+.btn-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+.btn-action:disabled          { opacity: 0.45; cursor: not-allowed; }
+.btn-action:not(:disabled):hover { opacity: 0.85; }
+.btn-action:not(:disabled):active { transform: scale(0.97); }
+
+.btn-action--primary {
+  background: #22c55e22;
+  border-color: #22c55e55;
+  color: #22c55e;
+}
+.btn-action--warn {
+  background: #f59e0b22;
+  border-color: #f59e0b55;
+  color: #f59e0b;
+}
+.btn-action--danger {
+  background: #ef444422;
+  border-color: #ef444455;
+  color: #ef4444;
+}
+
+/* ── Holding banner ──────────────────────────────────────────────────────── */
+.holding-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #f59e0b11;
+  border: 1px solid #f59e0b44;
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: #fbbf24;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.holding-banner svg { flex-shrink: 0; margin-top: 1px; }

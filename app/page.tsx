@@ -19,10 +19,12 @@ function mapJob(j: ApiJob): Job {
   const progress = j.status === 'done' ? 100 : j.status === 'running' ? 50 : 0
 
   const statusMap: Record<string, JobStatus> = {
-    done:    'downloaded',
-    queued:  'pending',
-    failed:  'failed',
-    running: 'running',
+    done:      'downloaded',
+    queued:    'pending',
+    failed:    'failed',
+    running:   'running',
+    holding:   'holding',
+    uploading: 'pending',
   }
   const status = (statusMap[j.status] ?? j.status) as JobStatus
 

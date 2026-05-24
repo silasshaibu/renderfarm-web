@@ -2,7 +2,7 @@
 // Core domain types for the Conductor Render Farm dashboard
 // ---------------------------------------------------------------------------
 
-export type JobStatus = 'running' | 'downloaded' | 'failed' | 'pending'
+export type JobStatus = 'running' | 'downloaded' | 'failed' | 'pending' | 'holding'
 
 export interface Job {
   id: string
