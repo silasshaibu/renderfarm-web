@@ -55,6 +55,25 @@ export async function initDB() {
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS status_description TEXT DEFAULT ''`
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 5`
 
+  // ── Tasks — one row per frame; records per-frame timing from the worker ───────
+  await sql`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id           SERIAL PRIMARY KEY,
+      job_id       INTEGER NOT NULL,
+      frame_index  INTEGER NOT NULL,   -- 0-based index within the job
+      frame_number INTEGER NOT NULL,   -- actual Blender frame number
+      status       TEXT DEFAULT 'pending',
+      started_at   TIMESTAMPTZ,        -- when worker picked up this frame
+      completed_at TIMESTAMPTZ,        -- when upload finished
+      output_url   TEXT DEFAULT '',
+      worker_host  TEXT DEFAULT '',
+      UNIQUE(job_id, frame_index)
+    )
+  `
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_tasks_job ON tasks(job_id)
+  `
+
   // ── Task logs — written by the render worker during/after each frame ─────────
   await sql`
     CREATE TABLE IF NOT EXISTS task_logs (

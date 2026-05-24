@@ -123,12 +123,30 @@ function ExecutionsPanel({
             <tbody>
               <tr><td className="text-blue-400">ATTEMPT</td><td>{exec.attempt}</td></tr>
               <tr><td className="text-blue-400">STATUS</td><td>{exec.status}</td></tr>
-              {exec.duration != null && (
-                <tr><td className="text-blue-400">DURATION_SEC</td><td>{exec.duration}</td></tr>
-              )}
-              {exec.startedAt && (
-                <tr><td className="text-blue-400">STARTED_AT</td><td>{exec.startedAt}</td></tr>
-              )}
+              {exec.startedAt ? (
+                <tr>
+                  <td className="text-blue-400">STARTED_AT</td>
+                  <td>{new Date(exec.startedAt).toLocaleString()}</td>
+                </tr>
+              ) : null}
+              {exec.duration != null ? (
+                <>
+                  <tr>
+                    <td className="text-blue-400">DURATION_SEC</td>
+                    <td>{exec.duration}</td>
+                  </tr>
+                  <tr>
+                    <td className="text-blue-400">DURATION_HUMAN</td>
+                    <td>
+                      {exec.duration >= 3600
+                        ? `${Math.floor(exec.duration / 3600)}h ${Math.floor((exec.duration % 3600) / 60)}m ${exec.duration % 60}s`
+                        : exec.duration >= 60
+                        ? `${Math.floor(exec.duration / 60)}m ${exec.duration % 60}s`
+                        : `${exec.duration}s`}
+                    </td>
+                  </tr>
+                </>
+              ) : null}
             </tbody>
           </table>
         </div>
@@ -246,8 +264,17 @@ export default function TaskLogPage({ params }: PageProps) {
     ? `${manifest.gpus ?? 1}× ${manifest.gpu_type.replace(/_/g, ' ')}`
     : manifest?.instance_type ?? job.software
 
+  const execDuration = executions[0]?.duration ?? null
+  const durationStr  = execDuration != null
+    ? execDuration >= 3600
+      ? `${Math.floor(execDuration / 3600)}h ${Math.floor((execDuration % 3600) / 60)}m ${execDuration % 60}s`
+      : execDuration >= 60
+      ? `${Math.floor(execDuration / 60)}m ${execDuration % 60}s`
+      : `${execDuration}s`
+    : null
+
   const statusDesc = task.completedAt
-    ? `Finished at ${new Date(task.completedAt).toLocaleString()}`
+    ? `Finished at ${new Date(task.completedAt).toLocaleString()}${durationStr ? ` · ${durationStr}` : ''}`
     : status === 'running' ? 'In progress'
     : status === 'pending' ? 'Waiting for worker'
     : status === 'holding' ? (job.statusDescription || 'On hold')

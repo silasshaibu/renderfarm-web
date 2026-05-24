@@ -5,6 +5,27 @@ import Link from 'next/link'
 import { jobs as jobsApi, type ApiJob } from '@/lib/api'
 import { getToken, getUser } from '@/lib/auth'
 
+// ── Per-frame task timing (from tasks table) ──────────────────────────────────
+interface TaskTiming {
+  status:      string
+  startedAt:   string | null
+  completedAt: string | null
+  outputUrl:   string
+  durationSec: number | null
+}
+
+function fmtDuration(sec: number | null): string {
+  if (sec == null) return '—'
+  if (sec >= 3600) return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`
+  if (sec >= 60)   return `${Math.floor(sec / 60)}m ${sec % 60}s`
+  return `${sec}s`
+}
+
+function fmtTime(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function padTask(n: number) { return String(n).padStart(3, '0') }
 
@@ -89,23 +110,39 @@ const TASK_PAGE_SIZE = 10
 export default function JobDetailPage({ params }: PageProps) {
   const { id } = use(params)
 
-  const [job,      setJob]      = useState<ApiJob | null>(null)
-  const [loading,  setLoading]  = useState(true)
-  const [error,    setError]    = useState('')
-  const [acting,   setActing]   = useState(false)
-  const [taskPage, setTaskPage] = useState(1)
-  const [selTask,  setSelTask]  = useState<number | null>(null)
+  const [job,         setJob]         = useState<ApiJob | null>(null)
+  const [taskTimings, setTaskTimings] = useState<Record<number, TaskTiming>>({})
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState('')
+  const [acting,      setActing]      = useState(false)
+  const [taskPage,    setTaskPage]    = useState(1)
+  const [selTask,     setSelTask]     = useState<number | null>(null)
+
+  const loadTimings = useCallback(async (jobId: string) => {
+    try {
+      const token = getToken() ?? ''
+      const res   = await fetch(`/api/jobs/${jobId}/tasks`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const data = await res.json() as Record<number, TaskTiming>
+        setTaskTimings(data)
+      }
+    } catch { /* non-critical */ }
+  }, [])
 
   const load = useCallback(async (silent = false) => {
     try {
       const data = await jobsApi.get(id)
       setJob(data); setError('')
+      // Load per-frame timing alongside job data
+      await loadTimings(id)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load job')
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [id])
+  }, [id, loadTimings])
 
   useEffect(() => {
     let cancelled = false
@@ -370,8 +407,9 @@ export default function JobDetailPage({ params }: PageProps) {
             <tbody>
               {taskIndices.map((idx) => {
                 const frameNum   = start + idx
-                const tStatus    = frameStatus(job.status, idx, job.outputs ?? [])
-                const outputUrl  = job.outputs?.[idx]
+                const timing     = taskTimings[idx]
+                const tStatus    = (timing?.status ?? frameStatus(job.status, idx, job.outputs ?? [])) as TaskStatus
+                const outputUrl  = timing?.outputUrl || job.outputs?.[idx]
                 const isSelected = selTask === idx
 
                 return (
@@ -397,9 +435,9 @@ export default function JobDetailPage({ params }: PageProps) {
                         : <span className="inline-flex items-center justify-center w-5 h-5 rounded text-xs border bg-white/5 border-white/10 text-gray-600">—</span>
                       }
                     </td>
-                    <td className="job-task-td right text-gray-500">—</td>
-                    <td className="job-task-td right text-gray-500">—</td>
-                    <td className="job-task-td right text-gray-500">—</td>
+                    <td className="job-task-td right text-gray-400">{fmtDuration(timing?.durationSec ?? null)}</td>
+                    <td className="job-task-td right text-gray-400">{fmtTime(timing?.startedAt ?? null)}</td>
+                    <td className="job-task-td right text-gray-400">{fmtTime(timing?.completedAt ?? null)}</td>
                   </tr>
                 )
               })}
