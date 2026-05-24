@@ -48,10 +48,18 @@ const jobs: Job[] = [
 
 let nextId = 3
 
-// GET /api/jobs — list all jobs
+// GET /api/jobs — list all jobs, or single job with ?jobNumber=RF-0001
 export async function GET(req: NextRequest) {
   const user = verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
+
+  const jobNumber = req.nextUrl.searchParams.get('jobNumber')
+  if (jobNumber) {
+    const job = jobs.find(j => j.jobNumber === jobNumber)
+    if (!job) return NextResponse.json({ message: 'Job not found' }, { status: 404 })
+    return NextResponse.json(job)
+  }
+
   return NextResponse.json(jobs)
 }
 

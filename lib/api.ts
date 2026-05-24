@@ -80,6 +80,8 @@ export interface ApiJob {
 export const jobs = {
   list: () => request<ApiJob[]>('/jobs'),
 
+  get: (jobNumber: string) => request<ApiJob>(`/jobs?jobNumber=${jobNumber}`),
+
   create: (data: { title: string; frames: string; software: string; blender_file?: string }) =>
     request<{ jobNumber: string; id: string }>('/jobs', { method: 'POST', body: JSON.stringify(data) }),
 
