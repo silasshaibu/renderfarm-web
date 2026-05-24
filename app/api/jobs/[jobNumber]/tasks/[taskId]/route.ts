@@ -195,5 +195,36 @@ export async function PUT(req: NextRequest, context: Context) {
     `
   }
 
+  // ── Recompute job cost when any task completes ───────────────────────────────
+  // Pricing: $0.03 / core-hour (CPU) + $0.45 / GPU-hour
+  if (isCompleted) {
+    try {
+      const costRows = await sql`
+        SELECT COALESCE(
+          SUM(EXTRACT(EPOCH FROM (completed_at - started_at))), 0
+        ) AS total_secs
+        FROM tasks
+        WHERE job_id = ${jobId}
+          AND completed_at IS NOT NULL
+          AND started_at  IS NOT NULL
+      `
+      const totalSecs = Number((costRows[0] as Record<string, unknown>).total_secs ?? 0)
+
+      // Read cores/gpus from job manifest
+      const jobRow   = await getJobRow(jobNumber)
+      const manifest = (jobRow?.manifest ?? {}) as ManifestData
+      const cores    = Number(manifest.cores ?? 4)
+      const gpus     = Number(manifest.gpus  ?? 0)
+
+      // Cost per second of render time
+      const costPerSec = (cores * 0.03 / 3600) + (gpus * 0.45 / 3600)
+      const costUsd    = Math.max(0, totalSecs * costPerSec)
+
+      await sql`
+        UPDATE jobs SET cost_usd = ${costUsd} WHERE id = ${jobId}
+      `
+    } catch { /* cost update is best-effort */ }
+  }
+
   return NextResponse.json({ ok: true, frameIndex: frameIdx, status })
 }

@@ -69,12 +69,15 @@ function UsersTab() {
 
   const handleAddUser = async () => {
     if (!newEmail) return
-    // POST via auth register then refetch
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/auth/register`, {
+      const firstName = newEmail.split('@')[0]
+      await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newEmail.split('@')[0], email: newEmail, password: 'temp1234' }),
+        body: JSON.stringify({
+          firstName, lastName: '', email: newEmail,
+          password: 'TempPass1!', accountName: firstName,
+        }),
       })
       await refetch()
     } catch { /* ignore */ }

@@ -115,6 +115,7 @@ export interface ApiJob {
   outputPath?:       string   // e.g. "C:/Users/Artist/render"
   workerHost?:       string   // hostname of the render worker that picked up the job
   statusDescription?: string  // human-readable detail (e.g. "Waiting for GPU worker")
+  costUsd?:          number   // computed from tasks timing: cores*$0.03/hr + GPUs*$0.45/hr
 }
 
 export const jobs = {

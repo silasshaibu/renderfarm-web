@@ -31,6 +31,7 @@ export interface Job {
   tasks:       number
   avgFrame:    string   // e.g. "9m 32s"
   created:     string   // ISO date string
+  cost?:       number   // USD, computed from task timing
 }
 
 // Table sort direction

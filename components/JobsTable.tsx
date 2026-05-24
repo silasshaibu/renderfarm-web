@@ -307,6 +307,7 @@ const COLUMNS: Column[] = [
   { key: 'progress',    label: 'PROGRESS',    sortable: true,  widthClass: 'col-w-md'  },
   { key: 'tasks',       label: 'TASKS',       sortable: true,  align: 'right'           },
   { key: 'avgFrame',    label: 'AVG FRAME',   sortable: true,  align: 'right'           },
+  { key: 'cost',        label: 'COST',        sortable: true,  align: 'right'           },
   { key: 'created',     label: 'CREATED',     sortable: true,  widthClass: 'col-w-lg'  },
 ]
 
@@ -448,6 +449,14 @@ function CellContent({ col, job }: { col: Column; job: Job }) {
       return <time dateTime={job.created} className="text-gray-400 font-mono text-xs">{formatDate(job.created)}</time>
     case 'memory':   return <span className="font-mono text-gray-300">{job.memory}</span>
     case 'avgFrame': return <span className="font-mono text-gray-300">{job.avgFrame}</span>
+    case 'cost': {
+      const c = job.cost ?? 0
+      return (
+        <span className={`font-mono text-xs ${c > 0 ? 'text-emerald-400' : 'text-gray-600'}`}>
+          {c > 0 ? `$${c.toFixed(3)}` : '—'}
+        </span>
+      )
+    }
     default: {
       const val = job[col.key as SortKey]
       return <span className="text-gray-300">{String(val)}</span>
@@ -476,7 +485,7 @@ export default function JobsTable({ jobs, onActionDone }: JobsTableProps) {
   const [priModal,    setPriModal]    = useState<Job | null>(null)   // Priority
   const [actionError, setActionError] = useState<string | null>(null)
 
-  const DEFAULT_HIDDEN = new Set<SortKey | '_actions'>(['project', 'title', 'progress'])
+  const DEFAULT_HIDDEN = new Set<SortKey | '_actions'>(['project', 'title', 'progress', 'cost'])
   const [visibleCols, setVisibleCols] = useState<Set<SortKey | '_actions'>>(
     new Set(COLUMNS.map(c => c.key).filter(k => !DEFAULT_HIDDEN.has(k)))
   )

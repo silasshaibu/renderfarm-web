@@ -51,6 +51,7 @@ function mapJob(j: ApiJob): Job {
     tasks:       total,
     avgFrame:    '—',
     created:     j.createdAt,
+    cost:        j.costUsd ?? 0,
   }
 }
 

@@ -34,6 +34,7 @@ function rowToJob(row: Record<string, unknown>) {
     outputPath:         row.output_path         ?? '',
     workerHost:         row.worker_host          ?? '',
     statusDescription:  row.status_description   ?? '',
+    costUsd:            Number(row.cost_usd      ?? 0),
   }
 }
 
