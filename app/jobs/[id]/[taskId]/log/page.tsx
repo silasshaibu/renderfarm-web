@@ -164,13 +164,13 @@ export default function TaskLogPage({ params }: PageProps) {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
             </svg>
-            <span className="text-gray-200 font-medium">{cap(job.user.name)}</span>
+            <span className="text-gray-200 font-medium">user</span>
           </div>
           <div className="flex items-center gap-1.5 text-sm text-gray-400">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
-            <span className="text-gray-200 font-medium">{job.project.name}</span>
+            <span className="text-gray-200 font-medium">Default</span>
           </div>
           <div className="job-instance-chip ml-auto">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
