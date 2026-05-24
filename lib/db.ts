@@ -37,6 +37,20 @@ export async function initDB() {
     )
   `
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS assets (
+      sha256      TEXT PRIMARY KEY,
+      blob_url    TEXT NOT NULL,
+      filename    TEXT,
+      size_bytes  BIGINT DEFAULT 0,
+      created_at  TIMESTAMP DEFAULT NOW()
+    )
+  `
+
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS manifest JSONB DEFAULT '{}'`
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS assets_total INT DEFAULT 0`
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS assets_uploaded INT DEFAULT 0`
+
   // Seed the default admin user if no users exist yet
   const existing = await sql`SELECT id FROM users LIMIT 1`
   if (existing.length === 0) {

@@ -56,25 +56,43 @@ export async function POST(req: NextRequest) {
   await initDB()
 
   const data = await req.json() as {
-    title?:        string
-    frames?:       string
-    software?:     string
-    blender_file?: string
+    title?:          string
+    frames?:         string
+    software?:       string
+    blender_file?:   string
+    status?:         string
+    manifest?:       Record<string, unknown>
+    assets_total?:   number
+    assets_uploaded?: number
   }
+
+  // Validate status — only allow known values
+  const VALID_STATUSES = ['queued', 'uploading', 'running', 'done', 'failed']
+  const status = (data.status && VALID_STATUSES.includes(data.status))
+    ? data.status
+    : 'queued'
 
   // Generate next RF-XXXX number
   const countRows = await sql`SELECT COUNT(*) AS cnt FROM jobs`
   const nextNum   = Number((countRows[0] as Record<string, unknown>).cnt) + 1
   const jobNumber = `RF-${String(nextNum).padStart(4, '0')}`
 
+  const manifest      = data.manifest      ? JSON.stringify(data.manifest)  : '{}'
+  const assetsTotal   = data.assets_total   ?? 0
+  const assetsUploaded = data.assets_uploaded ?? 0
+
   const rows = await sql`
-    INSERT INTO jobs (job_number, title, frames, software, blender_file)
+    INSERT INTO jobs (job_number, title, frames, software, blender_file, status, manifest, assets_total, assets_uploaded)
     VALUES (
       ${jobNumber},
-      ${data.title       ?? 'Untitled Job'},
-      ${data.frames      ?? '1-1'},
-      ${data.software    ?? 'blender-4-1'},
-      ${data.blender_file ?? ''}
+      ${data.title        ?? 'Untitled Job'},
+      ${data.frames       ?? '1-1'},
+      ${data.software     ?? 'blender-4-1'},
+      ${data.blender_file ?? ''},
+      ${status},
+      ${manifest}::jsonb,
+      ${assetsTotal},
+      ${assetsUploaded}
     )
     RETURNING *
   `
@@ -91,13 +109,14 @@ export async function PATCH(req: NextRequest) {
   await initDB()
 
   const id   = req.nextUrl.searchParams.get('id')   // numeric id from worker
-  const body = await req.json() as { status?: string; outputs?: string[] }
+  const body = await req.json() as { status?: string; outputs?: string[]; assets_uploaded?: number }
 
   const rows = await sql`
     UPDATE jobs
-    SET status     = COALESCE(${body.status ?? null}, status),
-        outputs    = COALESCE(${body.outputs ? JSON.stringify(body.outputs) : null}::jsonb, outputs),
-        updated_at = NOW()
+    SET status          = COALESCE(${body.status ?? null}, status),
+        outputs         = COALESCE(${body.outputs ? JSON.stringify(body.outputs) : null}::jsonb, outputs),
+        assets_uploaded = COALESCE(${body.assets_uploaded ?? null}, assets_uploaded),
+        updated_at      = NOW()
     WHERE id = ${id}
     RETURNING *
   `
