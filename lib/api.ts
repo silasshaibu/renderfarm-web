@@ -213,6 +213,9 @@ export const admin = {
   createLimit: (data: object) =>
     request('/admin/limits', { method: 'POST', body: JSON.stringify(data) }),
 
+  updateLimit: (id: string, data: object) =>
+    request(`/admin/limits/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
   deleteLimit: (id: string) =>
     request(`/admin/limits/${id}`, { method: 'DELETE' }),
 

@@ -230,7 +230,9 @@ const LIMIT_TYPES = ['Job', 'Project', 'Account'] as const
 const LIMIT_UNITS = ['Dollars', 'Core Hours'] as const
 
 function CostLimitsTab() {
-  const [limits,      setLimits]      = useState<CostLimit[]>(INITIAL_LIMITS)
+  const { data: apiLimits, refetch: refetchLimits } = useApiFetch(() => adminApi.limits())
+  const limits: CostLimit[] = (apiLimits as CostLimit[] | null) ?? []
+
   const [filterBy,    setFilterBy]    = useState('')
   const [search,      setSearch]      = useState('')
   const [showModal,   setShowModal]   = useState(false)
@@ -249,21 +251,30 @@ function CostLimitsTab() {
     search ? l.entity.toLowerCase().includes(search.toLowerCase()) : true
   )
 
-  const handleCreate = () => {
-    setLimits((ls) => [...ls, {
-      id: Date.now().toString(),
-      entity: nlJobId ? `${nlType.toLowerCase()} ${nlJobId}` : `${nlType.toLowerCase()} New`,
-      startDate: nlStart, endDate: nlEnd,
-      recurring: nlRecurring, action: nlAction,
-      limit: nlLimit, spent: 0,
-    }])
+  const handleCreate = async () => {
+    await adminApi.createLimit({
+      entity:    nlJobId ? `${nlType.toLowerCase()} ${nlJobId}` : `${nlType.toLowerCase()} New`,
+      limitType: nlType,
+      limit:     nlLimit,
+      units:     nlUnits,
+      action:    nlAction,
+      startDate: nlStart,
+      endDate:   nlEnd,
+      recurring: nlRecurring,
+    })
+    await refetchLimits()
     setShowModal(false)
   }
 
-  const updateLimit = (id: string, field: keyof CostLimit, value: string | boolean) =>
-    setLimits((ls) => ls.map((l) => l.id === id ? { ...l, [field]: value } : l))
+  const updateLimit = async (id: string, field: keyof CostLimit, value: string | boolean) => {
+    await adminApi.updateLimit(id, { [field]: value }).catch(() => null)
+    await refetchLimits()
+  }
 
-  const deleteLimit = (id: string) => setLimits((ls) => ls.filter((l) => l.id !== id))
+  const deleteLimit = async (id: string) => {
+    await adminApi.deleteLimit(id)
+    await refetchLimits()
+  }
 
   return (
     <div className="admin-panel">
