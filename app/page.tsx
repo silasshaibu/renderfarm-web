@@ -30,6 +30,7 @@ function mapJob(j: ApiJob): Job {
 
   return {
     id:          j.jobNumber,
+    internalId:  j.id,
     user:        'user',
     status,
     project:     'Default',

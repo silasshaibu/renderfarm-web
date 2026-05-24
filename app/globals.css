@@ -978,6 +978,72 @@ select.cost-limit-field {
   padding: 1.5rem;
 }
 
+/* ── Jobs table — row selection & right-click context menu ───────────────── */
+
+/* Clickable rows */
+.jobs-tbody-row--clickable {
+  cursor: pointer;
+}
+
+/* Left-click selected row */
+.jobs-tbody-row--selected {
+  background: rgba(59,130,246,0.1) !important;
+  outline: 1px solid rgba(59,130,246,0.3);
+  outline-offset: -1px;
+}
+.jobs-tbody-row--selected .jobs-td {
+  color: #e5e7eb;
+}
+
+/* Right-click context menu */
+.ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 180px;
+  background: #252525;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
+  padding: 4px 0;
+  font-size: 0.82rem;
+}
+
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 14px;
+  color: #d1d5db;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  font-family: inherit;
+}
+.ctx-menu-item:hover {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+.ctx-menu-item--disabled {
+  color: #4b5563;
+  cursor: default;
+}
+.ctx-menu-item--disabled:hover {
+  background: transparent;
+  color: #4b5563;
+}
+
+.ctx-menu-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+  margin: 3px 0;
+}
+
 /* ── JobsTable shared classes ─────────────────────────────────────────────── */
 .table-input {
   background: var(--bg-surface-2);

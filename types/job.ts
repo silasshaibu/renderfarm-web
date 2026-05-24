@@ -5,7 +5,8 @@
 export type JobStatus = 'running' | 'downloaded' | 'failed' | 'pending' | 'holding'
 
 export interface Job {
-  id: string
+  id: string          // jobNumber e.g. "RF-0001"
+  internalId: string  // DB UUID — used for PATCH calls
   user: string
   status: JobStatus
   project: string
