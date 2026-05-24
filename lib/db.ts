@@ -56,6 +56,15 @@ export async function initDB() {
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 5`
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cost_usd NUMERIC(10,4) DEFAULT 0`
 
+  // ── Wrangler settings — per-account key/value store ──────────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS wrangler_settings (
+      key        TEXT PRIMARY KEY,
+      value      JSONB NOT NULL DEFAULT 'null',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+
   // ── Projects ──────────────────────────────────────────────────────────────────
   await sql`
     CREATE TABLE IF NOT EXISTS projects (

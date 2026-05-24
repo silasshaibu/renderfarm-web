@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 // ---------------------------------------------------------------------------
 // Toggle switch
@@ -85,7 +85,49 @@ function SettingsTab() {
   const [outlierOn,   setOutlierOn]   = useState(true)
   const [checkFreq,   setCheckFreq]   = useState('5')
 
-  const [saved, setSaved] = useState(false)
+  const [saved,  setSaved]  = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  // Load settings from API on mount
+  const load = useCallback(async () => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+      const res   = await fetch('/api/wrangler-settings', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) return
+      const s = await res.json() as Record<string, unknown>
+      if (s.maxRuntimeOn  !== undefined) setMaxRuntimeOn(Boolean(s.maxRuntimeOn))
+      if (s.maxRuntime    !== undefined) setMaxRuntime(String(s.maxRuntime))
+      if (s.runtimeAction !== undefined) setRuntimeAction(String(s.runtimeAction))
+      if (s.spotOn        !== undefined) setSpotOn(Boolean(s.spotOn))
+      if (s.zoneOn        !== undefined) setZoneOn(Boolean(s.zoneOn))
+      if (s.maxWait       !== undefined) setMaxWait(String(s.maxWait))
+      if (s.priorityLevel !== undefined) setPriorityLevel(String(s.priorityLevel))
+      if (s.outlierOn     !== undefined) setOutlierOn(Boolean(s.outlierOn))
+      if (s.checkFreq     !== undefined) setCheckFreq(String(s.checkFreq))
+    } catch { /* ignore — settings are optional */ }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+      await fetch('/api/wrangler-settings', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          maxRuntimeOn, maxRuntime, runtimeAction,
+          spotOn, zoneOn, maxWait, priorityLevel,
+          outlierOn, checkFreq,
+        }),
+      })
+      setSaved(true); setTimeout(() => setSaved(false), 2500)
+    } catch { /* ignore */ }
+    finally { setSaving(false) }
+  }
 
   const UnavailableBadge = (
     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold wrangler-unavailable-badge">
@@ -194,8 +236,8 @@ function SettingsTab() {
       {/* Save button row */}
       <div className="flex justify-end pt-2 wrangler-save-row">
         <button type="button" className="admin-btn-primary px-6 py-2 text-sm"
-          onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2500) }}>
-          Save
+          disabled={saving} onClick={handleSave}>
+          {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
     </div>
