@@ -133,6 +133,9 @@ function PriorityModal({ job, onClose, onSave }: PriorityModalProps) {
               value={priority}
               onChange={e => setPriority(Number(e.target.value))} />
           </div>
+          <p className="edit-modal-hint">
+            Higher number = higher priority among your own jobs.
+          </p>
         </div>
 
         <div className="edit-modal-footer">
@@ -191,42 +194,63 @@ function ContextMenu({ x, y, job, onClose, onAction, onInstanceType, onPriority 
     }
   }, [onClose])
 
-  const btn = (label: string, next: string) => (
-    <button type="button" className="ctx-menu-item" role="menuitem"
+  const isHolding = job.status === 'holding'
+
+  /** Convenience: action button with tooltip */
+  const btn = (label: string, next: string, tip: string) => (
+    <button type="button" className="ctx-menu-item" title={tip}
       onClick={() => { onAction(job, next); onClose() }}>
       {label}
     </button>
   )
 
-  const isHolding    = job.status === 'holding'
-  const isDownloaded = job.status === 'downloaded'
-
   return (
     <div ref={ref} className="ctx-menu">
-      {/* Hold — disabled if already holding */}
+
+      {/* Hold */}
       <button type="button"
+        title="Pauses tasks without cancelling them. Tasks can be unholded later."
         className={`ctx-menu-item${isHolding ? ' ctx-menu-item--disabled' : ''}`}
         disabled={isHolding}
         onClick={() => { if (!isHolding) { onAction(job, 'holding'); onClose() } }}>
         Hold
       </button>
 
-      {btn('Kill',            'failed')}
-      {btn('Retry',           'queued')}
-      {btn('Retry Failed',    'queued')}
-      {btn('Retry Preempted', 'queued')}
-      {btn('Retry Sync',      'queued')}
+      {btn('Kill',
+        'failed',
+        'Hard termination — stops all running tasks immediately with no retry.')}
 
-      {/* Reviewed — no status change */}
-      <button type="button" className="ctx-menu-item" onClick={() => onClose()}>
+      {btn('Retry',
+        'queued',
+        'Re-queues every task in the job from scratch, regardless of current state.')}
+
+      {btn('Retry Failed',
+        'queued',
+        'Restarts only failed tasks (non-zero return code). Leaves successful tasks untouched.')}
+
+      {btn('Retry Preempted',
+        'queued',
+        'Restarts only tasks interrupted by cloud preemption on spot instances.')}
+
+      {btn('Retry Sync',
+        'queued',
+        'Retries the asset-sync phase. Use when files failed to transfer to render nodes (sync_failed).')}
+
+      {/* Reviewed — bookkeeping flag, no execution change */}
+      <button type="button" className="ctx-menu-item"
+        title="Marks the job as reviewed. Bookkeeping only — does not affect rendering."
+        onClick={() => onClose()}>
         Reviewed
       </button>
 
-      {/* Unhold — disabled unless holding or downloaded */}
+      {/* Unhold — only enabled when job is on hold */}
       <button type="button"
-        className={`ctx-menu-item${!isHolding && !isDownloaded ? ' ctx-menu-item--disabled' : ''}`}
-        disabled={!isHolding && !isDownloaded}
-        onClick={() => { if (isHolding || isDownloaded) { onAction(job, 'queued'); onClose() } }}>
+        title={isHolding
+          ? 'Releases held tasks back into the queue.'
+          : 'Only available when the job is on hold.'}
+        className={`ctx-menu-item${!isHolding ? ' ctx-menu-item--disabled' : ''}`}
+        disabled={!isHolding}
+        onClick={() => { if (isHolding) { onAction(job, 'queued'); onClose() } }}>
         Unhold
       </button>
 
@@ -244,10 +268,12 @@ function ContextMenu({ x, y, job, onClose, onAction, onInstanceType, onPriority 
 
         <div className="ctx-submenu">
           <button type="button" className="ctx-menu-item"
+            title="Run the job on a different render node type. Only affects tasks that have not yet run."
             onClick={() => { onInstanceType(job); onClose() }}>
             Instance Type
           </button>
           <button type="button" className="ctx-menu-item"
+            title="Change job priority. Higher number = higher priority among your own jobs."
             onClick={() => { onPriority(job); onClose() }}>
             Priority
           </button>
