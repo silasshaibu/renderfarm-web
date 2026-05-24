@@ -69,7 +69,12 @@ export interface ApiJob {
   id:                string
   jobNumber:         string
   title:             string
-  status:            'queued' | 'running' | 'done' | 'failed' | 'holding' | 'uploading'
+  status:            // Legacy DB names
+                   | 'queued' | 'done'
+                   // All 12 Conductor statuses
+                   | 'upload_pending' | 'uploading' | 'sync_pending' | 'sync_failed'
+                   | 'syncing' | 'pending' | 'holding' | 'running'
+                   | 'success' | 'downloaded' | 'failed' | 'preempted'
   frames:            string
   software:          string
   createdAt:         string

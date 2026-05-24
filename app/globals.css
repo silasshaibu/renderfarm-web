@@ -1466,13 +1466,22 @@ select.cost-limit-field {
   flex-shrink: 0;
   box-shadow: inset -3px -3px 6px rgba(0,0,0,0.35), 2px 2px 6px rgba(0,0,0,0.3);
 }
-.job-status-globe-downloaded { background: radial-gradient(circle at 35% 32%, #34d399, #059669); }
-.job-status-globe-running    { background: radial-gradient(circle at 35% 32%, #fbbf24, #d97706); }
-.job-status-globe-failed     { background: radial-gradient(circle at 35% 32%, #f87171, #b91c1c); }
-.job-status-globe-pending    { background: radial-gradient(circle at 35% 32%, #9ca3af, #4b5563); }
-.job-status-globe-holding    { background: radial-gradient(circle at 35% 32%, #fbbf24, #d97706); }
-.job-status-globe-uploading  { background: radial-gradient(circle at 35% 32%, #c084fc, #7c3aed); }
-.job-status-globe-queued     { background: radial-gradient(circle at 35% 32%, #60a5fa, #2563eb); }
+/* All 12 Conductor statuses + legacy */
+.job-status-globe-upload_pending { background: radial-gradient(circle at 35% 32%, #60a5fa, #2563eb); }
+.job-status-globe-uploading      { background: radial-gradient(circle at 35% 32%, #c084fc, #7c3aed); }
+.job-status-globe-sync_pending   { background: radial-gradient(circle at 35% 32%, #818cf8, #4338ca); }
+.job-status-globe-sync_failed    { background: radial-gradient(circle at 35% 32%, #fb923c, #c2410c); }
+.job-status-globe-syncing        { background: radial-gradient(circle at 35% 32%, #22d3ee, #0e7490); }
+.job-status-globe-pending        { background: radial-gradient(circle at 35% 32%, #9ca3af, #4b5563); }
+.job-status-globe-holding        { background: radial-gradient(circle at 35% 32%, #fbbf24, #d97706); }
+.job-status-globe-running        { background: radial-gradient(circle at 35% 32%, #fbbf24, #d97706); }
+.job-status-globe-success        { background: radial-gradient(circle at 35% 32%, #34d399, #059669); }
+.job-status-globe-downloaded     { background: radial-gradient(circle at 35% 32%, #34d399, #059669); }
+.job-status-globe-failed         { background: radial-gradient(circle at 35% 32%, #f87171, #b91c1c); }
+.job-status-globe-preempted      { background: radial-gradient(circle at 35% 32%, #fb923c, #c2410c); }
+/* Legacy DB names */
+.job-status-globe-queued         { background: radial-gradient(circle at 35% 32%, #60a5fa, #2563eb); }
+.job-status-globe-done           { background: radial-gradient(circle at 35% 32%, #34d399, #059669); }
 
 /* ── Task table (inside job detail — like Conductor) ─────────────────────── */
 .job-task-wrap {
@@ -2019,32 +2028,70 @@ select.cost-limit-field {
 /* Firefox fill */
 .job-progress-bar::-moz-progress-bar      { border-radius: 4px; transition: width 0.4s ease; }
 
-.job-progress-bar--queued::-webkit-progress-value  { background: #3b82f6; }
-.job-progress-bar--queued::-moz-progress-bar       { background: #3b82f6; }
-.job-progress-bar--running::-webkit-progress-value { background: #fbbf24; }
-.job-progress-bar--running::-moz-progress-bar      { background: #fbbf24; }
-.job-progress-bar--done::-webkit-progress-value    { background: #22c55e; }
-.job-progress-bar--done::-moz-progress-bar         { background: #22c55e; }
-.job-progress-bar--failed::-webkit-progress-value  { background: #ef4444; }
-.job-progress-bar--failed::-moz-progress-bar       { background: #ef4444; }
-.job-progress-bar--holding::-webkit-progress-value { background: #f59e0b; }
-.job-progress-bar--holding::-moz-progress-bar      { background: #f59e0b; }
-.job-progress-bar--uploading::-webkit-progress-value { background: #a78bfa; }
-.job-progress-bar--uploading::-moz-progress-bar      { background: #a78bfa; }
+/* <progress> fill colours — all 12 + legacy */
+.job-progress-bar--upload_pending::-webkit-progress-value { background: #3b82f6; }
+.job-progress-bar--upload_pending::-moz-progress-bar      { background: #3b82f6; }
+.job-progress-bar--uploading::-webkit-progress-value      { background: #a78bfa; }
+.job-progress-bar--uploading::-moz-progress-bar           { background: #a78bfa; }
+.job-progress-bar--sync_pending::-webkit-progress-value   { background: #818cf8; }
+.job-progress-bar--sync_pending::-moz-progress-bar        { background: #818cf8; }
+.job-progress-bar--sync_failed::-webkit-progress-value    { background: #f97316; }
+.job-progress-bar--sync_failed::-moz-progress-bar         { background: #f97316; }
+.job-progress-bar--syncing::-webkit-progress-value        { background: #22d3ee; }
+.job-progress-bar--syncing::-moz-progress-bar             { background: #22d3ee; }
+.job-progress-bar--pending::-webkit-progress-value        { background: #6b7280; }
+.job-progress-bar--pending::-moz-progress-bar             { background: #6b7280; }
+.job-progress-bar--holding::-webkit-progress-value        { background: #f59e0b; }
+.job-progress-bar--holding::-moz-progress-bar             { background: #f59e0b; }
+.job-progress-bar--running::-webkit-progress-value        { background: #fbbf24; }
+.job-progress-bar--running::-moz-progress-bar             { background: #fbbf24; }
+.job-progress-bar--success::-webkit-progress-value        { background: #22c55e; }
+.job-progress-bar--success::-moz-progress-bar             { background: #22c55e; }
+.job-progress-bar--downloaded::-webkit-progress-value     { background: #22c55e; }
+.job-progress-bar--downloaded::-moz-progress-bar          { background: #22c55e; }
+.job-progress-bar--failed::-webkit-progress-value         { background: #ef4444; }
+.job-progress-bar--failed::-moz-progress-bar              { background: #ef4444; }
+.job-progress-bar--preempted::-webkit-progress-value      { background: #f97316; }
+.job-progress-bar--preempted::-moz-progress-bar           { background: #f97316; }
+/* Legacy */
+.job-progress-bar--queued::-webkit-progress-value         { background: #3b82f6; }
+.job-progress-bar--queued::-moz-progress-bar              { background: #3b82f6; }
+.job-progress-bar--done::-webkit-progress-value           { background: #22c55e; }
+.job-progress-bar--done::-moz-progress-bar                { background: #22c55e; }
 
-/* Per-status status-label colours (job detail top-right text) */
-.job-status-label-queued    { color: #60a5fa; }
-.job-status-label-running   { color: #fbbf24; }
-.job-status-label-done      { color: #4ade80; }
-.job-status-label-failed    { color: #f87171; }
-.job-status-label-holding   { color: #fbbf24; }
-.job-status-label-uploading { color: #c084fc; }
-.job-progress-fill--queued    { background: #3b82f6; }
-.job-progress-fill--running   { background: #fbbf24; }  /* amber — matches Conductor */
-.job-progress-fill--done      { background: #22c55e; }
-.job-progress-fill--failed    { background: #ef4444; }
-.job-progress-fill--holding   { background: #f59e0b; }
-.job-progress-fill--uploading { background: #a78bfa; }
+/* Per-status status-label colours (job detail top-right text) — all 12 + legacy */
+.job-status-label-upload_pending { color: #60a5fa; }
+.job-status-label-uploading      { color: #c084fc; }
+.job-status-label-sync_pending   { color: #818cf8; }
+.job-status-label-sync_failed    { color: #fb923c; }
+.job-status-label-syncing        { color: #22d3ee; }
+.job-status-label-pending        { color: #9ca3af; }
+.job-status-label-holding        { color: #fbbf24; }
+.job-status-label-running        { color: #fbbf24; }
+.job-status-label-success        { color: #4ade80; }
+.job-status-label-downloaded     { color: #4ade80; }
+.job-status-label-failed         { color: #f87171; }
+.job-status-label-preempted      { color: #fb923c; }
+/* Legacy */
+.job-status-label-queued         { color: #60a5fa; }
+.job-status-label-done           { color: #4ade80; }
+
+/* Progress fill colours — all 12 + legacy */
+.job-progress-fill--upload_pending { background: #3b82f6; }
+.job-progress-fill--uploading      { background: #a78bfa; }
+.job-progress-fill--sync_pending   { background: #818cf8; }
+.job-progress-fill--sync_failed    { background: #f97316; }
+.job-progress-fill--syncing        { background: #22d3ee; }
+.job-progress-fill--pending        { background: #6b7280; }
+.job-progress-fill--holding        { background: #f59e0b; }
+.job-progress-fill--running        { background: #fbbf24; }
+.job-progress-fill--success        { background: #22c55e; }
+.job-progress-fill--downloaded     { background: #22c55e; }
+.job-progress-fill--failed         { background: #ef4444; }
+.job-progress-fill--preempted      { background: #f97316; }
+/* Legacy */
+.job-progress-fill--queued         { background: #3b82f6; }
+.job-progress-fill--done           { background: #22c55e; }
 
 /* ── Job action buttons (Hold / Unhold / Retry / Kill) ───────────────────── */
 .btn-action {

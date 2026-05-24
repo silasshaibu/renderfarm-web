@@ -8,36 +8,68 @@ import { getToken, getUser } from '@/lib/auth'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function padTask(n: number) { return String(n).padStart(3, '0') }
 
-// ── Status config ─────────────────────────────────────────────────────────────
+// ── Status config — all 12 Conductor statuses + legacy DB values ──────────────
 const STATUS_CFG: Record<string, { globe: string; label: string }> = {
-  queued:    { globe: 'queued',     label: 'queued'    },
-  running:   { globe: 'running',    label: 'running'   },
-  done:      { globe: 'downloaded', label: 'done'      },
-  failed:    { globe: 'failed',     label: 'failed'    },
-  holding:   { globe: 'holding',    label: 'holding'   },
-  uploading: { globe: 'uploading',  label: 'uploading' },
+  // Legacy DB names
+  queued:         { globe: 'queued',        label: 'queued'         },
+  done:           { globe: 'downloaded',    label: 'done'           },
+  // All 12 Conductor statuses
+  upload_pending: { globe: 'upload_pending', label: 'upload pending' },
+  uploading:      { globe: 'uploading',      label: 'uploading'      },
+  sync_pending:   { globe: 'sync_pending',   label: 'sync pending'   },
+  sync_failed:    { globe: 'sync_failed',    label: 'sync failed'    },
+  syncing:        { globe: 'syncing',        label: 'syncing'        },
+  pending:        { globe: 'pending',        label: 'pending'        },
+  holding:        { globe: 'holding',        label: 'holding'        },
+  running:        { globe: 'running',        label: 'running'        },
+  success:        { globe: 'success',        label: 'success'        },
+  downloaded:     { globe: 'downloaded',     label: 'downloaded'     },
+  failed:         { globe: 'failed',         label: 'failed'         },
+  preempted:      { globe: 'preempted',      label: 'preempted'      },
 }
 
 // ── Action buttons per job status ─────────────────────────────────────────────
+const HOLD   = { label: 'Hold',         next: 'holding',  style: 'btn-action--warn'    }
+const UNHOLD = { label: 'Unhold',       next: 'pending',  style: 'btn-action--primary' }
+const KILL   = { label: 'Kill',         next: 'failed',   style: 'btn-action--danger'  }
+const RETRY  = { label: 'Retry',        next: 'pending',  style: 'btn-action--primary' }
+const RSYNC  = { label: 'Retry Sync',   next: 'syncing',  style: 'btn-action--warn'    }
+
 const ACTIONS: Record<string, { label: string; next: string; style: string }[]> = {
-  queued:    [{ label: 'Hold', next: 'holding', style: 'btn-action--warn' },    { label: 'Kill', next: 'failed', style: 'btn-action--danger' }],
-  running:   [{ label: 'Hold', next: 'holding', style: 'btn-action--warn' },    { label: 'Kill', next: 'failed', style: 'btn-action--danger' }],
-  holding:   [{ label: 'Unhold', next: 'queued', style: 'btn-action--primary' }, { label: 'Kill', next: 'failed', style: 'btn-action--danger' }],
-  failed:    [{ label: 'Retry', next: 'queued', style: 'btn-action--primary' }],
-  done:      [],
-  uploading: [{ label: 'Kill', next: 'failed', style: 'btn-action--danger' }],
+  // Legacy
+  queued:         [HOLD, KILL],
+  done:           [],
+  // All 12 Conductor statuses
+  upload_pending: [KILL],
+  uploading:      [KILL],
+  sync_pending:   [KILL],
+  sync_failed:    [RSYNC, KILL],
+  syncing:        [KILL],
+  pending:        [HOLD, KILL],
+  holding:        [UNHOLD, KILL],
+  running:        [HOLD, KILL],
+  success:        [RETRY],
+  downloaded:     [],
+  failed:         [RETRY, KILL],
+  preempted:      [RETRY, KILL],
 }
 
 // ── Per-frame task status ─────────────────────────────────────────────────────
 type TaskStatus = 'done' | 'running' | 'failed' | 'holding' | 'pending'
 
+const DONE_STATUSES     = new Set(['done', 'success', 'downloaded'])
+const FAILED_STATUSES   = new Set(['failed'])
+const HOLDING_STATUSES  = new Set(['holding'])
+const PENDING_STATUSES  = new Set(['queued', 'uploading', 'upload_pending', 'sync_pending', 'sync_failed', 'syncing', 'pending', 'preempted'])
+
 function frameStatus(jobStatus: string, frameIdx: number, outputs: string[]): TaskStatus {
-  if (jobStatus === 'done')                              return 'done'
-  if (jobStatus === 'failed')                            return 'failed'
-  if (jobStatus === 'holding')                           return 'holding'
-  if (jobStatus === 'queued' || jobStatus === 'uploading') return 'pending'
-  if (outputs[frameIdx])                                 return 'done'
-  if (frameIdx === outputs.length)                       return 'running'
+  if (DONE_STATUSES.has(jobStatus))    return 'done'
+  if (FAILED_STATUSES.has(jobStatus))  return 'failed'
+  if (HOLDING_STATUSES.has(jobStatus)) return 'holding'
+  if (PENDING_STATUSES.has(jobStatus)) return 'pending'
+  // running — use outputs array to determine per-frame state
+  if (outputs[frameIdx])               return 'done'
+  if (frameIdx === outputs.length)     return 'running'
   return 'pending'
 }
 
@@ -110,8 +142,8 @@ export default function JobDetailPage({ params }: PageProps) {
     const end   = parts.length > 1 ? parseInt(parts[1]) || start : start
     const total = Math.max(1, end - start + 1)
     const done  = job?.outputs?.length ?? 0
-    const pct   = job?.status === 'done'    ? 100
-                : job?.status === 'running' ? Math.round((done / total) * 100)
+    const pct   = DONE_STATUSES.has(job?.status ?? '')  ? 100
+                : job?.status === 'running'              ? Math.round((done / total) * 100)
                 : 0
     return { frames: str, start, end, total, done, pct }
   }, [job])
