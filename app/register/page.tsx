@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { setToken } from '@/lib/auth'
 import s from './register.module.css'
 
 const COUNTRIES = [
@@ -15,19 +16,20 @@ export default function RegisterPage() {
   const router = useRouter()
 
   const [form, setForm] = useState({
-    firstName:   '',
-    lastName:    '',
-    phone:       '',
-    country:     '',
-    company:     '',
-    email:       '',
-    accountName: '',
+    firstName:       '',
+    lastName:        '',
+    phone:           '',
+    country:         '',
+    company:         '',
+    email:           '',
+    accountName:     '',
+    password:        '',
+    confirmPassword: '',
   })
-  const [googleSignIn, setGoogleSignIn] = useState(false)
-  const [agreedTerms,  setAgreedTerms]  = useState(false)
-  const [notRobot,     setNotRobot]     = useState(false)
-  const [loading,      setLoading]      = useState(false)
-  const [error,        setError]        = useState('')
+  const [agreedTerms, setAgreedTerms] = useState(false)
+  const [notRobot,    setNotRobot]    = useState(false)
+  const [loading,     setLoading]     = useState(false)
+  const [error,       setError]       = useState('')
 
   const set = (k: keyof typeof form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -35,19 +37,59 @@ export default function RegisterPage() {
 
   const canSubmit =
     form.firstName && form.lastName && form.country &&
-    form.email && form.accountName && agreedTerms && notRobot
+    form.email && form.accountName && form.password &&
+    form.confirmPassword && agreedTerms && notRobot
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!canSubmit) return
+
+    if (form.password !== form.confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+    if (form.password.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+
     setError('')
     setLoading(true)
+
     try {
-      // TODO: wire to real register API endpoint
-      await new Promise((r) => setTimeout(r, 800))
-      router.push('/login?registered=1')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed')
+      const res = await fetch('/api/auth/register', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName:   form.firstName,
+          lastName:    form.lastName,
+          email:       form.email,
+          password:    form.password,
+          accountName: form.accountName,
+          company:     form.company,
+          country:     form.country,
+          phone:       form.phone,
+        }),
+      })
+
+      const data = await res.json() as {
+        access_token?: string
+        message?: string
+        user?: { id: string; email: string; isAdmin: boolean }
+      }
+
+      if (!res.ok) {
+        setError(data.message ?? 'Registration failed')
+        return
+      }
+
+      // Auto sign-in — save token then redirect to jobs
+      if (data.access_token && data.user) {
+        setToken(data.access_token, data.user)
+      }
+      router.push('/')
+    } catch {
+      setError('Network error — please try again')
     } finally {
       setLoading(false)
     }
@@ -160,21 +202,30 @@ export default function RegisterPage() {
               />
             </div>
 
-            {/* Checkboxes */}
-            <div className={s.checkGroup}>
-              <label className={s.checkRow}>
-                <input
-                  type="checkbox"
-                  checked={googleSignIn}
-                  onChange={(e) => setGoogleSignIn(e.target.checked)}
-                  className={s.checkbox}
-                />
-                <span className={s.checkText}>
-                  Sign in with Google instead of username and password, for yourself
-                  and invitees. A Google Workspace account is required.
-                </span>
-              </label>
+            {/* Password */}
+            <div className={s.field}>
+              <label className={s.label}>PASSWORD *</label>
+              <input
+                type="password" required placeholder="At least 8 characters"
+                value={form.password} onChange={set('password')}
+                className={s.input}
+                autoComplete="new-password"
+              />
+            </div>
 
+            {/* Confirm password */}
+            <div className={s.field}>
+              <label className={s.label}>CONFIRM PASSWORD *</label>
+              <input
+                type="password" required placeholder="Repeat password"
+                value={form.confirmPassword} onChange={set('confirmPassword')}
+                className={s.input}
+                autoComplete="new-password"
+              />
+            </div>
+
+            {/* Terms checkbox */}
+            <div className={s.checkGroup}>
               <label className={s.checkRow}>
                 <input
                   type="checkbox" required
