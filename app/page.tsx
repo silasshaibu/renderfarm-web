@@ -41,7 +41,7 @@ function mapJob(j: ApiJob): Job {
     internalId:  j.id,
     user:        'user',
     status,
-    project:     'Default',
+    project:     (j.manifest?.project ?? 'Default'),
     title:       j.title,
     priority:    j.priority ?? 5,
     cores:       4,

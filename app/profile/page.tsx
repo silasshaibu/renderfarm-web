@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { getToken } from '@/lib/auth'
 
 // ---------------------------------------------------------------------------
-// Reusable form field
+// Shared UI primitives
 // ---------------------------------------------------------------------------
 function FormField({ label, id, children }: { label: string; id: string; children: React.ReactNode }) {
   return (
@@ -16,68 +17,52 @@ function FormField({ label, id, children }: { label: string; id: string; childre
   )
 }
 
-function TextInput({ id, value, onChange, type = 'text', readOnly = false }: {
+function TextInput({ id, value, onChange, type = 'text', readOnly = false, placeholder }: {
   id: string; value: string; onChange?: (v: string) => void
-  type?: string; readOnly?: boolean
+  type?: string; readOnly?: boolean; placeholder?: string
 }) {
   return (
     <input
-      id={id}
-      type={type}
-      value={value}
-      readOnly={readOnly}
+      id={id} type={type} value={value} readOnly={readOnly}
+      placeholder={placeholder}
       onChange={onChange ? (e) => onChange(e.target.value) : undefined}
       className={['calc-input px-3 py-2', readOnly ? 'opacity-60 cursor-default' : ''].join(' ')}
     />
   )
 }
 
-// ---------------------------------------------------------------------------
-// Section wrapper
-// ---------------------------------------------------------------------------
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="calc-card">
-      <h2 className="text-base font-semibold text-white mb-5 pb-3 profile-section-title">
-        {title}
-      </h2>
+      <h2 className="text-base font-semibold text-white mb-5 pb-3 profile-section-title">{title}</h2>
       <div className="flex flex-col gap-4">{children}</div>
     </div>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Save button
-// ---------------------------------------------------------------------------
-function SaveBtn({ onClick }: { onClick: () => void }) {
+function SaveBtn({ onClick, saving }: { onClick: () => void; saving?: boolean }) {
   return (
-    <button type="button" onClick={onClick}
-      className="px-5 py-2 rounded text-sm font-medium profile-danger-btn">
-      Save Changes
+    <button type="button" onClick={onClick} disabled={saving}
+      className="px-5 py-2 rounded text-sm font-medium profile-danger-btn disabled:opacity-50">
+      {saving ? 'Saving…' : 'Save Changes'}
     </button>
   )
 }
 
-// ---------------------------------------------------------------------------
-// API Key display
-// ---------------------------------------------------------------------------
 function ApiKey({ value }: { value: string }) {
   const [revealed, setRevealed] = useState(false)
   const [copied,   setCopied]   = useState(false)
-
   const handleCopy = () => {
     navigator.clipboard.writeText(value).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
     })
   }
-
   return (
     <div className="flex items-center gap-2">
-      <div className="flex-1 calc-input px-3 py-2 font-mono text-sm text-gray-300 overflow-hidden">
+      <div className="flex-1 calc-input px-3 py-2 font-mono text-sm text-gray-300 overflow-hidden truncate">
         {revealed ? value : '•'.repeat(40)}
       </div>
-      <button type="button" onClick={() => setRevealed((r) => !r)}
+      <button type="button" onClick={() => setRevealed(r => !r)}
         className="px-3 py-2 rounded text-xs text-gray-400 border border-white/10 hover:text-white hover:border-white/20 transition-colors whitespace-nowrap">
         {revealed ? 'Hide' : 'Reveal'}
       </button>
@@ -90,60 +75,136 @@ function ApiKey({ value }: { value: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// API helper
+// ---------------------------------------------------------------------------
+async function apiFetch(path: string, method = 'GET', body?: object) {
+  const token = getToken() ?? ''
+  const res   = await fetch(path, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
+const TIMEZONES = [
+  'Africa/Accra', 'Africa/Lagos', 'Europe/London', 'Europe/Paris',
+  'America/New_York', 'America/Los_Angeles', 'Asia/Tokyo', 'Australia/Sydney',
+]
+
 export default function ProfilePage() {
-  const [firstName, setFirstName] = useState('Silas')
-  const [lastName,  setLastName]  = useState('Shaibu')
-  const [email]                   = useState('silasshaibu2@gmail.com')
+  const [loading, setLoading] = useState(true)
+  const [saving,  setSaving]  = useState(false)
+  const [saved,   setSaved]   = useState(false)
+  const [error,   setError]   = useState('')
+
+  // ── Form state ──────────────────────────────────────────────────────────────
+  const [firstName, setFirstName] = useState('')
+  const [lastName,  setLastName]  = useState('')
+  const [email,     setEmail]     = useState('')
   const [phone,     setPhone]     = useState('')
-  const [company,   setCompany]   = useState('Swade Art')
-  const [country,   setCountry]   = useState('Ghana')
+  const [company,   setCompany]   = useState('')
+  const [country,   setCountry]   = useState('')
+  const [accountName, setAccountName] = useState('')
   const [timezone,  setTimezone]  = useState('Africa/Accra')
 
-  const [emailNotifs, setEmailNotifs] = useState(true)
-  const [jobComplete, setJobComplete] = useState(true)
-  const [jobFailed,   setJobFailed]   = useState(true)
+  // Notification prefs (client-only for now)
+  const [emailNotifs,  setEmailNotifs]  = useState(true)
+  const [jobComplete,  setJobComplete]  = useState(true)
+  const [jobFailed,    setJobFailed]    = useState(true)
   const [weeklyReport, setWeeklyReport] = useState(false)
 
-  const [saved, setSaved] = useState(false)
-  const handleSave = () => {
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+  // ── Load profile on mount ───────────────────────────────────────────────────
+  const load = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/profile') as {
+        firstName: string; lastName: string; email: string
+        phone: string; company: string; country: string; accountName: string
+      }
+      setFirstName(data.firstName)
+      setLastName(data.lastName)
+      setEmail(data.email)
+      setPhone(data.phone ?? '')
+      setCompany(data.company ?? '')
+      setCountry(data.country ?? '')
+      setAccountName(data.accountName ?? '')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load profile')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  // ── Save ────────────────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    setSaving(true); setError('')
+    try {
+      await apiFetch('/api/profile', 'PATCH', { firstName, lastName, phone, company, country })
+      setSaved(true); setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
   }
+
+  // ── Derived API key (JWT-based, deterministic per account) ──────────────────
+  // In production this would be a stored secret; here we use a stable placeholder.
+  const apiKeyDisplay = email
+    ? `rf_live_${btoa(email).replace(/[^a-z0-9]/gi, '').slice(0, 32).padEnd(32, '0')}`
+    : '—'
+
+  if (loading) return (
+    <div className="flex flex-col gap-6 max-w-3xl">
+      <h1 className="text-2xl font-semibold text-white tracking-tight">Profile</h1>
+      <p className="text-gray-500 text-sm py-10 text-center">Loading…</p>
+    </div>
+  )
 
   return (
     <div className="flex flex-col gap-6 max-w-3xl">
-      {/* Heading */}
       <div>
         <h1 className="text-2xl font-semibold text-white tracking-tight">Profile</h1>
         <p className="mt-1 text-sm text-gray-500">Manage your account details and preferences</p>
       </div>
 
       {saved && (
-        <div className="enterprise-alert-success">
-          <span>✓</span> Changes saved successfully
-        </div>
+        <div className="enterprise-alert-success"><span>✓</span> Changes saved successfully</div>
+      )}
+      {error && (
+        <div className="text-red-400 text-sm bg-red-900/20 border border-red-900/40 rounded px-4 py-3">{error}</div>
       )}
 
       {/* Personal Information */}
       <Section title="Personal Information">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField label="First Name" id="first-name">
-            <TextInput id="first-name" value={firstName} onChange={setFirstName} />
+            <TextInput id="first-name" value={firstName} onChange={setFirstName} placeholder="First name" />
           </FormField>
           <FormField label="Last Name" id="last-name">
-            <TextInput id="last-name" value={lastName} onChange={setLastName} />
+            <TextInput id="last-name" value={lastName} onChange={setLastName} placeholder="Last name" />
           </FormField>
         </div>
         <FormField label="Email Address" id="email">
           <TextInput id="email" value={email} type="email" readOnly />
         </FormField>
+        <FormField label="Account Name" id="account-name">
+          <TextInput id="account-name" value={accountName} readOnly />
+        </FormField>
         <FormField label="Phone Number" id="phone">
-          <TextInput id="phone" value={phone} onChange={setPhone} type="tel" />
+          <TextInput id="phone" value={phone} onChange={setPhone} type="tel" placeholder="+1 555 000 0000" />
         </FormField>
         <div className="flex justify-end pt-2">
-          <SaveBtn onClick={handleSave} />
+          <SaveBtn onClick={handleSave} saving={saving} />
         </div>
       </Section>
 
@@ -151,61 +212,48 @@ export default function ProfilePage() {
       <Section title="Organization">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField label="Company / Studio" id="company">
-            <TextInput id="company" value={company} onChange={setCompany} />
+            <TextInput id="company" value={company} onChange={setCompany} placeholder="Your studio" />
           </FormField>
           <FormField label="Country" id="country">
-            <TextInput id="country" value={country} onChange={setCountry} />
+            <TextInput id="country" value={country} onChange={setCountry} placeholder="Country" />
           </FormField>
         </div>
         <FormField label="Timezone" id="timezone">
           <select id="timezone" title="Timezone" value={timezone}
             onChange={(e) => setTimezone(e.target.value)}
             className="calc-input px-3 py-2">
-            {[
-              'Africa/Accra','Africa/Lagos','Europe/London','Europe/Paris',
-              'America/New_York','America/Los_Angeles','Asia/Tokyo','Australia/Sydney',
-            ].map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+            {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
           </select>
         </FormField>
         <div className="flex justify-end pt-2">
-          <SaveBtn onClick={handleSave} />
+          <SaveBtn onClick={handleSave} saving={saving} />
         </div>
       </Section>
 
       {/* API Key */}
       <Section title="API Key">
         <p className="text-sm text-gray-500">
-          Use this key to authenticate with the Conductor API and CLI tools.
+          Use this key to authenticate with the Renderfarm API and CLI tools.
           Keep it secret — do not commit it to version control.
         </p>
         <FormField label="API Key" id="api-key">
-          <ApiKey value="ck_live_2f8a3b9d7e1c4f6a0b5d8e2f3a7c9b1d4e6f8a0b2c4d6e8f0a1b3c5d7e9f1a3b5" />
+          <ApiKey value={apiKeyDisplay} />
         </FormField>
-        <div className="flex gap-2 pt-1">
-          <button type="button"
-            className="px-4 py-1.5 rounded text-xs font-medium text-gray-300 border border-white/10 hover:border-white/20 hover:text-white transition-colors">
-            Regenerate Key
-          </button>
-        </div>
       </Section>
 
       {/* Notification Preferences */}
       <Section title="Notification Preferences">
         <div className="flex flex-col gap-3">
           {[
-            { id: 'email-notifs',   label: 'Email notifications',        sub: 'Receive emails for account events', val: emailNotifs, set: setEmailNotifs },
-            { id: 'notif-complete', label: 'Job completed',              sub: 'Alert when a render job finishes',  val: jobComplete,  set: setJobComplete  },
-            { id: 'notif-failed',   label: 'Job failed',                 sub: 'Alert when a job encounters an error', val: jobFailed,  set: setJobFailed    },
-            { id: 'notif-weekly',   label: 'Weekly usage report',        sub: 'Summary of compute spend each week',   val: weeklyReport, set: setWeeklyReport },
+            { id: 'email-notifs',   label: 'Email notifications', sub: 'Receive emails for account events',         val: emailNotifs,  set: setEmailNotifs  },
+            { id: 'notif-complete', label: 'Job completed',        sub: 'Alert when a render job finishes',          val: jobComplete,  set: setJobComplete  },
+            { id: 'notif-failed',   label: 'Job failed',           sub: 'Alert when a job encounters an error',      val: jobFailed,    set: setJobFailed    },
+            { id: 'notif-weekly',   label: 'Weekly usage report',  sub: 'Summary of compute spend each week',        val: weeklyReport, set: setWeeklyReport },
           ].map(({ id, label, sub, val, set }) => (
             <label key={id} htmlFor={id}
               className="flex items-start gap-3 cursor-pointer p-3 rounded-lg hover:bg-white/5 transition-colors">
-              <input
-                type="checkbox" id={id}
-                className="accent-blue-500 mt-0.5 shrink-0"
-                checked={val}
-                onChange={() => set((v) => !v)}
-              />
+              <input type="checkbox" id={id} className="accent-blue-500 mt-0.5 shrink-0"
+                checked={val} onChange={() => set(v => !v)} />
               <div>
                 <p className="text-sm text-gray-200">{label}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{sub}</p>
@@ -214,11 +262,11 @@ export default function ProfilePage() {
           ))}
         </div>
         <div className="flex justify-end pt-2">
-          <SaveBtn onClick={handleSave} />
+          <SaveBtn onClick={handleSave} saving={saving} />
         </div>
       </Section>
 
-      {/* Danger zone */}
+      {/* Danger Zone */}
       <Section title="Danger Zone">
         <p className="text-sm text-gray-500">
           Permanently delete your account and all associated data. This action cannot be undone.

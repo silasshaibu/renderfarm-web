@@ -56,6 +56,22 @@ export async function initDB() {
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 5`
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cost_usd NUMERIC(10,4) DEFAULT 0`
 
+  // ── Projects ──────────────────────────────────────────────────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS projects (
+      id         SERIAL PRIMARY KEY,
+      name       TEXT NOT NULL,
+      is_active  BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+  // Seed a default project so the UI isn't empty on first run
+  await sql`
+    INSERT INTO projects (name, is_active)
+    VALUES ('Default', TRUE)
+    ON CONFLICT DO NOTHING
+  `
+
   // ── Tasks — one row per frame; records per-frame timing from the worker ───────
   await sql`
     CREATE TABLE IF NOT EXISTS tasks (

@@ -368,7 +368,37 @@ export default function JobDetailPage({ params }: PageProps) {
         <div className="mb-5">
           <div className="flex justify-between text-xs text-gray-500 mb-1.5">
             <span>Render progress</span>
-            <span>{done} / {total} frames ({pct}%)</span>
+            <div className="flex items-center gap-3">
+              <span>{done} / {total} frames ({pct}%)</span>
+              {(job.outputs?.length ?? 0) > 0 && (
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                  onClick={() => {
+                    const urls = job.outputs ?? []
+                    urls.forEach((url, i) => {
+                      setTimeout(() => {
+                        const a = document.createElement('a')
+                        a.href     = url
+                        a.download = `frame_${String(i).padStart(4, '0')}.png`
+                        a.target   = '_blank'
+                        document.body.appendChild(a)
+                        a.click()
+                        document.body.removeChild(a)
+                      }, i * 300)  // stagger to avoid browser popup blocker
+                    })
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Download All ({job.outputs?.length})
+                </button>
+              )}
+            </div>
           </div>
           <progress
             className={`job-progress-bar job-progress-bar--${job.status}`}
