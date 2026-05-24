@@ -1840,3 +1840,158 @@ select.cost-limit-field {
   line-height: 1.55;
 }
 .holding-banner svg { flex-shrink: 0; margin-top: 1px; }
+
+/* ── Jobs page header chips ──────────────────────────────────────────────── */
+.jobs-running-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 9999px;
+  background: rgba(251,191,36,0.12);
+  border: 1px solid rgba(251,191,36,0.3);
+  color: #fbbf24;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.jobs-running-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fbbf24;
+  animation: pulse-dot 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(0.55); }
+}
+.jobs-idle-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: rgba(156,163,175,0.08);
+  border: 1px solid rgba(156,163,175,0.2);
+  color: #6b7280;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+/* Submit Job button in jobs header */
+.btn-submit-job {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 6px;
+  background: #0d9488;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+  white-space: nowrap;
+  border: none;
+}
+.btn-submit-job:hover { background: #0f766e; }
+
+/* ── Job detail — two-column layout ─────────────────────────────────────── */
+/* Two-column grid: metadata left, globe right */
+.job-detail-cols {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2rem;
+  align-items: start;
+  margin-bottom: 20px;
+}
+@media (max-width: 640px) {
+  .job-detail-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Left column — stacked metadata fields */
+.job-detail-left {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;            /* generous gap between each field block */
+}
+
+/* Each field: label on its own line, value on next line */
+.job-detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.job-detail-field-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #6b7280;        /* muted label, like Conductor */
+  text-transform: none;
+}
+.job-detail-field-value {
+  font-size: 0.875rem;
+  color: #e5e7eb;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+/* Right column — globe + status + owner + machine, all centered */
+.job-detail-right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+}
+
+/* Status label below globe */
+.job-detail-status-label {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* User / project row below status label (right column) */
+.job-detail-right-owner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.78rem;
+  color: #9ca3af;
+  text-align: center;
+}
+.job-detail-right-owner-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #6b7280;
+  font-size: 0.74rem;
+}
+.job-detail-right-owner-project svg { opacity: 0.6; flex-shrink: 0; }
+
+/* Machine chip row (worker host + spot badge) */
+.job-machine-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* "spot" preemptible badge — teal, matches Conductor */
+.job-spot-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgba(13,148,136,0.18);
+  border: 1px solid rgba(13,148,136,0.4);
+  color: #2dd4bf;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}

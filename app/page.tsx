@@ -62,11 +62,29 @@ export default function JobsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-white tracking-tight">Jobs</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          {loading ? 'Loading…' : `${runningCount} Running Instance${runningCount !== 1 ? 's' : ''}`}
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold text-white tracking-tight">Jobs</h1>
+          {!loading && (
+            <div className="mt-2 flex items-center gap-2">
+              {runningCount > 0 ? (
+                <span className="jobs-running-chip">
+                  <span className="jobs-running-dot" aria-hidden="true" />
+                  {runningCount} Running Instance{runningCount !== 1 ? 's' : ''}
+                </span>
+              ) : (
+                <span className="jobs-idle-chip">No running instances</span>
+              )}
+            </div>
+          )}
+        </div>
+        <a href="/submit" className="btn-submit-job">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Submit Job
+        </a>
       </div>
 
       {error && (
