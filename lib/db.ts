@@ -170,6 +170,29 @@ export async function initDB() {
     )
   `
 
+  // ── Rate-limit log — sliding-window counter per IP + action ─────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS rate_limit_log (
+      id         BIGSERIAL PRIMARY KEY,
+      key        TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS idx_rl_key_ts ON rate_limit_log(key, created_at)`
+
+  // ── Wrangler events — written by the render worker when it acts on jobs ──────
+  await sql`
+    CREATE TABLE IF NOT EXISTS wrangler_events (
+      id          SERIAL PRIMARY KEY,
+      wrangler    TEXT NOT NULL,      -- e.g. 'Max Frame/Task Runtime'
+      job_number  TEXT NOT NULL,
+      action      TEXT NOT NULL,      -- e.g. 'Task killed'
+      detail      TEXT NOT NULL DEFAULT '',
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS idx_wrangler_events_ts ON wrangler_events(created_at DESC)`
+
   // Seed the default admin user if no users exist yet
   const existing = await sql`SELECT id FROM users LIMIT 1`
   if (existing.length === 0) {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 // ---------------------------------------------------------------------------
 // Toggle switch
@@ -245,18 +245,16 @@ function SettingsTab() {
 }
 
 // ---------------------------------------------------------------------------
-// History Tab
+// History Tab — live data from /api/wrangler-events
 // ---------------------------------------------------------------------------
 interface WranglerEvent {
-  ts: string; wrangler: string; jobId: string; action: string; detail: string
+  id:        string
+  ts:        string
+  wrangler:  string
+  jobNumber: string
+  action:    string
+  detail:    string
 }
-
-const HISTORY: WranglerEvent[] = [
-  { ts: '2026-05-22T23:10:00Z', wrangler: 'Max Frame/Task Runtime', jobId: '00161', action: 'Killed task',       detail: 'Task 12 exceeded 1h runtime — killed' },
-  { ts: '2026-05-21T14:02:00Z', wrangler: 'Zone Relocation',        jobId: '00160', action: 'Zone moved',        detail: 'Moved from us-east1-b → us-central1-c after 92 min wait' },
-  { ts: '2026-05-20T08:55:00Z', wrangler: 'Outlier Frames',         jobId: '00159', action: 'Outlier detected',  detail: 'Task 37 running 3.2× avg — email sent' },
-  { ts: '2026-05-18T19:40:00Z', wrangler: 'Zone Relocation',        jobId: '00158', action: 'Zone moved',        detail: 'Moved from europe-west1-b → us-east1-b after 95 min wait' },
-]
 
 function fmt(iso: string) {
   return new Intl.DateTimeFormat('en-GB', {
@@ -267,6 +265,36 @@ function fmt(iso: string) {
 }
 
 function HistoryTab() {
+  const [events,  setEvents]  = useState<WranglerEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState('')
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+
+    fetch('/api/wrangler-events', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then((data: WranglerEvent[]) => {
+        if (mountedRef.current) { setEvents(Array.isArray(data) ? data : []); setLoading(false) }
+      })
+      .catch((e: unknown) => {
+        if (mountedRef.current) {
+          setError(e instanceof Error ? e.message : 'Failed to load events')
+          setLoading(false)
+        }
+      })
+
+    return () => { mountedRef.current = false }
+  }, [])
+
+  if (loading) return <p className="px-4 py-10 text-center text-gray-600 text-sm">Loading…</p>
+  if (error)   return <p className="px-4 py-10 text-center text-red-500 text-sm">{error}</p>
+
   return (
     <div className="overflow-auto">
       <table className="w-full text-sm border-collapse">
@@ -278,14 +306,22 @@ function HistoryTab() {
           </tr>
         </thead>
         <tbody>
-          {HISTORY.length === 0 ? (
-            <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-600">No wrangler events yet.</td></tr>
+          {events.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="px-4 py-10 text-center text-gray-600 text-sm">
+                No wrangler events yet. Events appear here when the worker enforces runtime limits or handles GPU holds.
+              </td>
+            </tr>
           ) : (
-            HISTORY.map((e, i) => (
-              <tr key={i} className="jobs-tbody-row">
+            events.map((e) => (
+              <tr key={e.id} className="jobs-tbody-row">
                 <td className="jobs-td font-mono text-xs text-gray-500">{fmt(e.ts)}</td>
                 <td className="jobs-td text-gray-300">{e.wrangler}</td>
-                <td className="jobs-td"><a href={`/jobs/${e.jobId}`} className="font-mono text-blue-400 hover:underline">{e.jobId}</a></td>
+                <td className="jobs-td">
+                  <a href={`/jobs/${e.jobNumber}`} className="font-mono text-blue-400 hover:underline">
+                    {e.jobNumber}
+                  </a>
+                </td>
                 <td className="jobs-td">
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-400/10 text-yellow-400 border border-yellow-400/25">
                     {e.action}

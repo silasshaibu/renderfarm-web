@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { sql, initDB } from '@/lib/db'
 import { JWT_SECRET, makeJti } from '@/lib/auth-server'
+import { rateLimit, getIP, retryMessage } from '@/lib/rateLimit'
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,6 +14,16 @@ export async function POST(req: NextRequest) {
     }
 
     await initDB()   // ensures tables exist + seeds default user on first run
+
+    // ── Rate limiting: 10 attempts per IP per 15 minutes ─────────────────────
+    const ip = getIP(req.headers)
+    const rl = await rateLimit(`login:${ip}`, 10, 15 * 60)
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { message: retryMessage(rl.retryAfter) },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+      )
+    }
 
     const rows = await sql`SELECT * FROM users WHERE email = ${email.toLowerCase()} LIMIT 1`
     if (!rows.length) {
@@ -33,8 +44,7 @@ export async function POST(req: NextRequest) {
       { expiresIn: '7d' },
     )
 
-    // Store session for admin session management
-    const ip        = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? ''
+    // Store session for admin session management (reuse ip from rate-limit check above)
     const userAgent = req.headers.get('user-agent') ?? ''
     await sql`
       INSERT INTO user_sessions (user_id, jti, ip_address, user_agent, expires_at)

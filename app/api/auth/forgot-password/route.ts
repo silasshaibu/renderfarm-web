@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sql, initDB } from '@/lib/db'
 import { sendEmail, passwordResetEmail, baseUrl } from '@/lib/email'
+import { rateLimit, getIP } from '@/lib/rateLimit'
 
 // ── Ensure the table exists lazily (no schema migration needed) ───────────────
 async function ensureResetTable() {
@@ -27,6 +28,14 @@ export async function POST(req: NextRequest) {
 
   if (!email) {
     return NextResponse.json({ message: 'Email is required' }, { status: 400 })
+  }
+
+  // ── Rate limiting: 5 attempts per IP per hour ─────────────────────────────
+  // Return 200 regardless (no 429 exposed) to avoid revealing the limit via timing
+  const ip = getIP(req.headers)
+  const rl = await rateLimit(`forgot:${ip}`, 5, 60 * 60)
+  if (!rl.allowed) {
+    return NextResponse.json({ ok: true })   // silent — same response as success
   }
 
   // Look up user — if not found, return 200 anyway (silent)
