@@ -1,16 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
+import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
 
-function verifyToken(req: NextRequest) {
-  const auth  = req.headers.get('authorization') ?? ''
-  const token = auth.replace(/^Bearer\s+/i, '')
-  if (!token) return null
-  try { return jwt.verify(token, JWT_SECRET) as { sub: string; email: string; isAdmin: boolean } }
-  catch { return null }
-}
 
 type Context = { params: Promise<{ jobNumber: string; taskId: string }> }
 
@@ -18,7 +10,7 @@ type Context = { params: Promise<{ jobNumber: string; taskId: string }> }
 // Returns log lines for a specific task (frame).
 // Optional ?after=<id> for incremental polling (returns only rows with id > after).
 export async function GET(req: NextRequest, context: Context) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()
@@ -62,7 +54,7 @@ export async function GET(req: NextRequest, context: Context) {
 // Body: { lines: string[], level?: 'info'|'warn'|'error' }
 //    or { line: string,  level?: '...' }
 export async function POST(req: NextRequest, context: Context) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()

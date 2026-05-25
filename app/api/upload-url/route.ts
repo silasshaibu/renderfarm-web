@@ -1,26 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { verifyToken } from '@/lib/auth-server'
 import { generateClientTokenFromReadWriteToken } from '@vercel/blob/client'
-import jwt from 'jsonwebtoken'
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
 
-function verifyToken(req: NextRequest): { sub: string; email: string } | null {
-  const auth  = req.headers.get('authorization') ?? ''
-  const token = auth.replace(/^Bearer\s+/i, '').trim()
-  if (!token) return null
-  try {
-    return jwt.verify(token, JWT_SECRET) as { sub: string; email: string }
-  } catch {
-    return null
-  }
-}
 
 // POST { filename: "scene.zip" }
 // Returns { clientToken, uploadUrl } — Blender PUTs the file directly to
 // Vercel Blob using the clientToken.  The file never passes through our
 // serverless function, so there is no timeout or size limit from our side.
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   const { filename } = await req.json() as { filename?: string }

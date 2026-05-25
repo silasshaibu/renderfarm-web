@@ -1,16 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
+import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
 
-function verifyToken(req: NextRequest) {
-  const auth  = req.headers.get('authorization') ?? ''
-  const token = auth.replace(/^Bearer\s+/i, '')
-  if (!token) return null
-  try { return jwt.verify(token, JWT_SECRET) as { sub: string; email: string; isAdmin: boolean } }
-  catch { return null }
-}
 
 // ── PATCH /api/admin/users/[id] ───────────────────────────────────────────────
 // Update a user's isActive or isAdmin flag. Admin-only.
@@ -19,7 +11,7 @@ export async function PATCH(
   req: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
   if (!user.isAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 

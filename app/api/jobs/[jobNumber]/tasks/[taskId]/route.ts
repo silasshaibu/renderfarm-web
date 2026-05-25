@@ -1,17 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
+import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 import type { ManifestData } from '@/lib/api'
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
 
-function verifyToken(req: NextRequest) {
-  const auth  = req.headers.get('authorization') ?? ''
-  const token = auth.replace(/^Bearer\s+/i, '')
-  if (!token) return null
-  try { return jwt.verify(token, JWT_SECRET) as { sub: string; email: string; isAdmin: boolean } }
-  catch { return null }
-}
 
 type Context = { params: Promise<{ jobNumber: string; taskId: string }> }
 
@@ -39,7 +31,7 @@ async function getJobRow(jobNumber: string) {
 // Returns { job: ApiJob, task: ApiTask }.
 // Reads real timing from the tasks table; falls back to derived values.
 export async function GET(req: NextRequest, context: Context) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()
@@ -137,7 +129,7 @@ export async function GET(req: NextRequest, context: Context) {
 //   • Before render  — { status: "running", frame_number, worker_host }
 //   • After upload   — { status: "done",    frame_number, output_url, worker_host }
 export async function PUT(req: NextRequest, context: Context) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()

@@ -1,16 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
+import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
 
-function verifyToken(req: NextRequest) {
-  const auth  = req.headers.get('authorization') ?? ''
-  const token = auth.replace(/^Bearer\s+/i, '')
-  if (!token) return null
-  try { return jwt.verify(token, JWT_SECRET) as { sub: string; email: string; isAdmin: boolean } }
-  catch { return null }
-}
 
 function rowToProject(r: Record<string, unknown>) {
   return {
@@ -28,7 +20,7 @@ function rowToProject(r: Record<string, unknown>) {
 // ── GET /api/projects ─────────────────────────────────────────────────────────
 // Returns all projects with job counts joined in.
 export async function GET(req: NextRequest) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()
@@ -62,7 +54,7 @@ export async function GET(req: NextRequest) {
 // ── POST /api/projects ────────────────────────────────────────────────────────
 // Create a new project.
 export async function POST(req: NextRequest) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()

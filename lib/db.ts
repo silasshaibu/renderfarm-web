@@ -116,6 +116,60 @@ export async function initDB() {
       ON task_logs(job_id, frame_number)
   `
 
+  // ── Session tracking + JWT revocation ────────────────────────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      user_id    INTEGER NOT NULL,
+      jti        TEXT UNIQUE NOT NULL,
+      ip_address TEXT DEFAULT '',
+      user_agent TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ,
+      revoked    BOOLEAN DEFAULT FALSE
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_sessions_jti  ON user_sessions(jti)`
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS token_blocklist (
+      jti        TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+
+  // ── Cost limits ───────────────────────────────────────────────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS cost_limits (
+      id         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      entity     TEXT NOT NULL,
+      limit_type TEXT NOT NULL DEFAULT 'Job',
+      limit_usd  NUMERIC(10,4) NOT NULL DEFAULT 0,
+      units      TEXT NOT NULL DEFAULT 'Dollars',
+      action     TEXT NOT NULL DEFAULT 'Send Email',
+      start_date TEXT DEFAULT '',
+      end_date   TEXT DEFAULT '',
+      recurring  BOOLEAN DEFAULT FALSE,
+      spent      NUMERIC(10,4) DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+
+  // ── Support tickets ───────────────────────────────────────────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS support_tickets (
+      id          SERIAL PRIMARY KEY,
+      email       TEXT NOT NULL,
+      subject     TEXT NOT NULL DEFAULT '',
+      category    TEXT NOT NULL DEFAULT 'general',
+      priority    TEXT NOT NULL DEFAULT 'normal',
+      description TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'open',
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+
   // Seed the default admin user if no users exist yet
   const existing = await sql`SELECT id FROM users LIMIT 1`
   if (existing.length === 0) {

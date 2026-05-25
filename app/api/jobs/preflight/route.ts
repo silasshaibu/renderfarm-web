@@ -1,25 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
+import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
 
-function verifyToken(req: NextRequest) {
-  const auth  = req.headers.get('authorization') ?? ''
-  const token = auth.replace(/^Bearer\s+/i, '').trim()
-  if (!token) return null
-  try {
-    return jwt.verify(token, JWT_SECRET) as { sub: string; email: string; isAdmin: boolean }
-  } catch {
-    return null
-  }
-}
 
 // POST /api/jobs/preflight
 // Body: { assets: [{ sha256: string }] }
 // Returns: { missing: string[] } — SHA256s not yet in the assets table
 export async function POST(req: NextRequest) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()

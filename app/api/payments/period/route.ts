@@ -1,22 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
+import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
 
-function verifyToken(req: NextRequest) {
-  const auth  = req.headers.get('authorization') ?? ''
-  const token = auth.replace(/^Bearer\s+/i, '')
-  if (!token) return null
-  try { return jwt.verify(token, JWT_SECRET) as { sub: string } }
-  catch { return null }
-}
 
 // ── GET /api/payments/period ──────────────────────────────────────────────────
 // Returns the current billing period summary (same data as /api/payments/budget,
 // kept as an alias for api.ts compatibility).
 export async function GET(req: NextRequest) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()

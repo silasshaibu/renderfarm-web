@@ -1,22 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
+import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
 
-function verifyToken(req: NextRequest) {
-  const auth  = req.headers.get('authorization') ?? ''
-  const token = auth.replace(/^Bearer\s+/i, '')
-  if (!token) return null
-  try { return jwt.verify(token, JWT_SECRET) as { sub: string; email: string; isAdmin: boolean } }
-  catch { return null }
-}
 
 type Context = { params: Promise<{ id: string }> }
 
 // ── GET /api/projects/[id] ────────────────────────────────────────────────────
 export async function GET(req: NextRequest, context: Context) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()
@@ -31,7 +23,7 @@ export async function GET(req: NextRequest, context: Context) {
 // ── PATCH /api/projects/[id] ──────────────────────────────────────────────────
 // Update project name or isActive status.
 export async function PATCH(req: NextRequest, context: Context) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()
@@ -54,7 +46,7 @@ export async function PATCH(req: NextRequest, context: Context) {
 // ── DELETE /api/projects/[id] ─────────────────────────────────────────────────
 // Soft-delete: sets is_active = FALSE (preserves job history).
 export async function DELETE(req: NextRequest, context: Context) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()

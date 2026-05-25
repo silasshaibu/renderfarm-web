@@ -1,29 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
-
-const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
-
-function verifyToken(req: NextRequest) {
-  const auth  = req.headers.get('authorization') ?? ''
-  const token = auth.replace(/^Bearer\s+/i, '')
-  if (!token) return null
-  try { return jwt.verify(token, JWT_SECRET) as { sub: string; isAdmin: boolean } }
-  catch { return null }
-}
+import { verifyToken } from '@/lib/auth-server'
+import { sql, initDB } from '@/lib/db'
 
 // ── DELETE /api/admin/sessions/[id] ──────────────────────────────────────────
-// Terminate (invalidate) a user session.
-// JWTs are stateless — real invalidation requires a blocklist table or
-// short-lived tokens. This endpoint exists so the UI doesn't 404; when
-// a token blocklist is added, implement it here.
+// Revoke a session: mark it revoked in user_sessions and add its jti to the
+// token_blocklist so subsequent requests with that token are rejected.
 export async function DELETE(
   req: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const user = verifyToken(req)
-  if (!user || !user.isAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
+  const caller = await verifyToken(req)
+  if (!caller || !caller.isAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 
-  // TODO: add session id to a blocklist table to invalidate the JWT
-  void context.params // params available when needed
+  const { id } = await context.params
+  await initDB()
+
+  // Look up the session to get its jti
+  const rows = await sql`
+    SELECT jti FROM user_sessions WHERE id = ${id} LIMIT 1
+  ` as Record<string, unknown>[]
+
+  if (!rows.length) return NextResponse.json({ message: 'Session not found' }, { status: 404 })
+
+  const jti = rows[0].jti as string
+
+  // Mark revoked in user_sessions
+  await sql`UPDATE user_sessions SET revoked = TRUE WHERE id = ${id}`
+
+  // Add to blocklist so in-flight tokens are rejected
+  await sql`
+    INSERT INTO token_blocklist (jti) VALUES (${jti})
+    ON CONFLICT (jti) DO NOTHING
+  `
+
   return NextResponse.json({ ok: true })
 }

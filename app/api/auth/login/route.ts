@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { sql, initDB } from '@/lib/db'
-
-const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
+import { JWT_SECRET, makeJti } from '@/lib/auth-server'
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,11 +25,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 })
     }
 
+    const jti          = makeJti()
+    const expiresAt    = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)   // 7 days
     const access_token = jwt.sign(
-      { sub: String(user.id), email: user.email, isAdmin: user.is_admin },
+      { sub: String(user.id), email: user.email, isAdmin: user.is_admin, jti },
       JWT_SECRET,
       { expiresIn: '7d' },
     )
+
+    // Store session for admin session management
+    const ip        = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? ''
+    const userAgent = req.headers.get('user-agent') ?? ''
+    await sql`
+      INSERT INTO user_sessions (user_id, jti, ip_address, user_agent, expires_at)
+      VALUES (${user.id}, ${jti}, ${ip}, ${userAgent}, ${expiresAt.toISOString()})
+      ON CONFLICT (jti) DO NOTHING
+    `
 
     return NextResponse.json({
       access_token,

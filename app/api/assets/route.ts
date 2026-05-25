@@ -1,21 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { verifyToken } from '@/lib/auth-server'
 import { generateClientTokenFromReadWriteToken } from '@vercel/blob/client'
-import jwt from 'jsonwebtoken'
 import { sql, initDB } from '@/lib/db'
 import path from 'path'
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'renderfarm-dev-secret-change-in-production'
 
-function verifyToken(req: NextRequest) {
-  const auth  = req.headers.get('authorization') ?? ''
-  const token = auth.replace(/^Bearer\s+/i, '').trim()
-  if (!token) return null
-  try {
-    return jwt.verify(token, JWT_SECRET) as { sub: string; email: string; isAdmin: boolean }
-  } catch {
-    return null
-  }
-}
 
 // POST /api/assets?action=token
 // Body: { sha256, filename, size_bytes }
@@ -98,7 +87,7 @@ async function handleConfirm(req: NextRequest) {
 
 // Route dispatcher — handles both actions in a single file
 export async function POST(req: NextRequest) {
-  const user = verifyToken(req)
+  const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   const action = req.nextUrl.searchParams.get('action')

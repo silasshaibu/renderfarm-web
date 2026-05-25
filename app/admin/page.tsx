@@ -71,14 +71,27 @@ function UsersTab() {
     if (!newEmail) return
     try {
       const firstName = newEmail.split('@')[0]
-      await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const token     = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+      const res = await fetch('/api/auth/register', {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({
-          firstName, lastName: '', email: newEmail,
-          password: 'TempPass1!', accountName: firstName,
+          firstName,
+          lastName:    '',
+          email:       newEmail,
+          password:    'TempPass1!',
+          accountName: firstName,
+          isAdmin:     newAdmin,
         }),
       })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: 'Failed to create user' }))
+        alert(err.message ?? 'Failed to create user')
+        return
+      }
       await refetch()
     } catch { /* ignore */ }
     setNewEmail('')
