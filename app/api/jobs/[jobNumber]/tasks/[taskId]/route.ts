@@ -72,11 +72,21 @@ export async function GET(req: NextRequest, context: Context) {
       )
     : null
 
-  // Actual frame number
-  const frameStr    = (row.frames as string) ?? '1-1'
-  const parts       = frameStr.replace(/\s/g, '').split('-')
-  const frameStart  = parseInt(parts[0]) || 1
-  const actualFrame = (tr?.frame_number as number | undefined) ?? (frameStart + frameIdx)
+  // Actual frame number — handles both "start-end" ranges and "1,25,100" scout lists
+  const frameStr  = (row.frames as string) ?? '1-1'
+  const frameClean = frameStr.replace(/\s/g, '')
+  let actualFrame: number
+  if (tr?.frame_number !== undefined) {
+    actualFrame = tr.frame_number as number
+  } else if (frameClean.includes(',')) {
+    // Scout mode: map frameIdx position → specific frame number
+    const scoutFrames = frameClean.split(',').map(Number).filter(Boolean).sort((a, b) => a - b)
+    actualFrame = scoutFrames[frameIdx] ?? scoutFrames[scoutFrames.length - 1] ?? 1
+  } else {
+    const rangeParts = frameClean.split('-')
+    const frameStart = parseInt(rangeParts[0]) || 1
+    actualFrame      = frameStart + frameIdx
+  }
 
   // uploadedFiles from manifest assets (same for every task in this job)
   const uploadedFiles = (manifest.assets ?? []).map((a, i) => ({
