@@ -7,16 +7,35 @@ import ProgressBar from '@/components/ProgressBar'
 import { getToken } from '@/lib/auth'
 
 // ---------------------------------------------------------------------------
-// GPU type options — drives Instance Type modal
+// Instance Type catalogue — loaded from /api/instance-types on first use
 // ---------------------------------------------------------------------------
-const GPU_TYPES = [
-  { label: 'RTX 4000', cores: 4,  memoryGb: 16 },
-  { label: 'RTX 3090', cores: 8,  memoryGb: 32 },
-  { label: 'A100',     cores: 16, memoryGb: 64 },
-  { label: 'V100',     cores: 8,  memoryGb: 32 },
-] as const
+interface InstanceTypeSpec {
+  id: string; label: string; cores: number; memoryGb: number
+  gpuType: string | null; gpus: number; pricePerHour: number; preemptible: boolean
+}
 
-const GPU_COUNTS = [1, 2, 4, 8] as const
+// Shared cache so the list is only fetched once per page load
+let _instanceTypeCache: InstanceTypeSpec[] | null = null
+
+async function fetchInstanceTypes(token: string | null): Promise<InstanceTypeSpec[]> {
+  if (_instanceTypeCache) return _instanceTypeCache
+  try {
+    const res = await fetch('/api/instance-types', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (res.ok) {
+      _instanceTypeCache = await res.json() as InstanceTypeSpec[]
+      return _instanceTypeCache
+    }
+  } catch { /* ignore — fall through to defaults */ }
+  // Fallback catalogue if API is unavailable
+  return [
+    { id: 'n1-standard-4',  label: 'Standard 4-core',  cores: 4,  memoryGb: 15, gpuType: null,               gpus: 0, pricePerHour: 0.19, preemptible: true  },
+    { id: 'gpu-t4-1',       label: '1× T4 GPU',         cores: 4,  memoryGb: 15, gpuType: 'NVIDIA_TESLA_T4',  gpus: 1, pricePerHour: 0.85, preemptible: true  },
+    { id: 'gpu-a100-1',     label: '1× A100 GPU',        cores: 12, memoryGb: 85, gpuType: 'NVIDIA_A100',      gpus: 1, pricePerHour: 3.50, preemptible: false },
+    { id: 'gpu-v100-1',     label: '1× V100 GPU',        cores: 8,  memoryGb: 61, gpuType: 'NVIDIA_TESLA_V100',gpus: 1, pricePerHour: 2.48, preemptible: true  },
+  ]
+}
 
 // ---------------------------------------------------------------------------
 // Instance Type modal
@@ -24,14 +43,23 @@ const GPU_COUNTS = [1, 2, 4, 8] as const
 interface InstanceTypeModalProps {
   job: Job
   onClose: () => void
-  onSave: (job: Job, gpuType: string, gpus: number) => void
+  onSave: (job: Job, instanceId: string, gpuType: string | null, gpus: number) => void
 }
 
 function InstanceTypeModal({ job, onClose, onSave }: InstanceTypeModalProps) {
-  const [gpuType, setGpuType] = useState<string>(GPU_TYPES[0].label)
-  const [gpus,    setGpus]    = useState<number>(1)
+  const [instances,    setInstances]    = useState<InstanceTypeSpec[]>([])
+  const [selectedId,   setSelectedId]   = useState<string>('')
+  const [loading,      setLoading]      = useState(true)
 
-  const spec = GPU_TYPES.find(g => g.label === gpuType) ?? GPU_TYPES[0]
+  // Load catalogue on mount
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') : null
+    fetchInstanceTypes(token).then(list => {
+      setInstances(list)
+      setSelectedId(list[0]?.id ?? '')
+      setLoading(false)
+    })
+  }, [])
 
   // Close on Escape
   useEffect(() => {
@@ -40,6 +68,8 @@ function InstanceTypeModal({ job, onClose, onSave }: InstanceTypeModalProps) {
     return () => document.removeEventListener('keydown', handler)
   }, [onClose])
 
+  const spec = instances.find(i => i.id === selectedId) ?? instances[0]
+
   return (
     <div className="edit-modal-overlay" aria-modal="true" role="dialog"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -47,49 +77,69 @@ function InstanceTypeModal({ job, onClose, onSave }: InstanceTypeModalProps) {
         <div className="edit-modal-header">Instance Type</div>
         <div className="edit-modal-body">
 
-          {/* GPU Type */}
-          <div className="edit-modal-field">
-            <label htmlFor="gpu-type-select" className="edit-modal-label">GPU Type</label>
-            <select id="gpu-type-select" className="edit-modal-select"
-              value={gpuType}
-              onChange={e => setGpuType(e.target.value)}>
-              {GPU_TYPES.map(g => (
-                <option key={g.label} value={g.label}>{g.label}</option>
-              ))}
-            </select>
-          </div>
+          {loading ? (
+            <p className="text-xs text-gray-500 py-4 text-center">Loading instance types…</p>
+          ) : (
+            <>
+              {/* Instance selector */}
+              <div className="edit-modal-field">
+                <label htmlFor="instance-type-select" className="edit-modal-label">Instance Type</label>
+                <select id="instance-type-select" className="edit-modal-select"
+                  value={selectedId}
+                  onChange={e => setSelectedId(e.target.value)}>
+                  {/* Group by CPU / GPU */}
+                  <optgroup label="CPU">
+                    {instances.filter(i => i.gpus === 0).map(i => (
+                      <option key={i.id} value={i.id}>{i.label}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="GPU">
+                    {instances.filter(i => i.gpus > 0).map(i => (
+                      <option key={i.id} value={i.id}>{i.label}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
 
-          {/* GPUs */}
-          <div className="edit-modal-field">
-            <label htmlFor="gpu-count-select" className="edit-modal-label">GPUs</label>
-            <select id="gpu-count-select" className="edit-modal-select"
-              value={gpus}
-              onChange={e => setGpus(Number(e.target.value))}>
-              {GPU_COUNTS.map(n => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Cores — read-only, derived */}
-          <div className="edit-modal-field">
-            <span className="edit-modal-label">Cores</span>
-            <span className="edit-modal-value">{spec.cores * gpus}</span>
-          </div>
-
-          {/* Memory — read-only, derived */}
-          <div className="edit-modal-field">
-            <span className="edit-modal-label">Memory</span>
-            <span className="edit-modal-value">{spec.memoryGb * gpus}</span>
-          </div>
+              {spec && (
+                <>
+                  {/* Cores — read-only */}
+                  <div className="edit-modal-field">
+                    <span className="edit-modal-label">Cores</span>
+                    <span className="edit-modal-value">{spec.cores}</span>
+                  </div>
+                  {/* Memory — read-only */}
+                  <div className="edit-modal-field">
+                    <span className="edit-modal-label">Memory</span>
+                    <span className="edit-modal-value">{spec.memoryGb} GB</span>
+                  </div>
+                  {/* GPUs — read-only when fixed by instance */}
+                  {spec.gpus > 0 && (
+                    <div className="edit-modal-field">
+                      <span className="edit-modal-label">GPUs</span>
+                      <span className="edit-modal-value">{spec.gpus}× {spec.gpuType?.replace(/_/g, ' ')}</span>
+                    </div>
+                  )}
+                  {/* Price */}
+                  <div className="edit-modal-field">
+                    <span className="edit-modal-label">Price</span>
+                    <span className="edit-modal-value">${spec.pricePerHour.toFixed(2)}/hr{spec.preemptible ? ' (spot)' : ''}</span>
+                  </div>
+                </>
+              )}
+            </>
+          )}
 
         </div>
 
         <div className="edit-modal-footer">
           <span className="edit-modal-job-label">Job {job.id}</span>
           <div className="flex items-center gap-2">
-            <button type="button" className="edit-modal-ok"
-              onClick={() => { onSave(job, gpuType, gpus); onClose() }}>
+            <button type="button" className="edit-modal-ok" disabled={loading || !spec}
+              onClick={() => {
+                if (spec) onSave(job, spec.id, spec.gpuType, spec.gpus)
+                onClose()
+              }}>
               Ok
             </button>
             <button type="button" className="edit-modal-cancel" onClick={onClose}>
@@ -542,8 +592,18 @@ export default function JobsTable({ jobs, onActionDone }: JobsTableProps) {
   }, [onActionDone])
 
   const handleContextAction  = useCallback((job: Job, next: string) => patch(job, { status: next }), [patch])
-  const handleInstanceTypeSave = useCallback((job: Job, gpuType: string, gpus: number) =>
-    patch(job, { manifest: { gpu_type: gpuType, gpus, instance_type: 'GPU' } }), [patch])
+  const handleInstanceTypeSave = useCallback(
+    (job: Job, instanceId: string, gpuType: string | null, gpus: number) =>
+      patch(job, {
+        manifest: {
+          instance_type: instanceId,
+          gpu_type:      gpuType ?? undefined,
+          gpus:          gpus > 0 ? gpus : undefined,
+          machine_type:  gpus > 0 ? 'GPU' : 'CPU',
+        },
+      }),
+    [patch]
+  )
   const handlePrioritySave   = useCallback((job: Job, priority: number) => patch(job, { priority }), [patch])
 
   const visibleColumns = COLUMNS.filter(c => visibleCols.has(c.key))
