@@ -36,6 +36,13 @@ export default function LoginForm({ port }: Props) {
       setToken(data.access_token, data.user)
       setSuccess(true)
 
+      // If the account requires 2FA but the user hasn't set it up, show a notice
+      // before redirecting (full TOTP implementation is a future milestone).
+      if (data.requires2faSetup) {
+        setError('Note: your account administrator requires two-factor authentication. Please contact support to complete 2FA setup.')
+        // Still allow login — just informational until TOTP is implemented
+      }
+
       if (port) {
         // DCC plugin flow — redirect to Blender's local callback server
         setTimeout(() => {

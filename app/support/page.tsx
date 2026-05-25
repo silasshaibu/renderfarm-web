@@ -75,6 +75,8 @@ export default function SupportPage() {
   const [category,    setCategory]    = useState('')
   const [files,       setFiles]       = useState<File[]>([])
   const [submitted,   setSubmitted]   = useState(false)
+  const [submitting,  setSubmitting]  = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -86,10 +88,43 @@ export default function SupportPage() {
     setFiles((prev) => [...prev, ...Array.from(e.dataTransfer.files)])
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email || !description || !priority) return
-    setSubmitted(true)
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+      const res = await fetch('/api/support', {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          email,
+          subject:     issue,
+          category:    category || issue,
+          priority,
+          description: [
+            description,
+            os        ? `OS: ${os}`          : '',
+            plugins   ? `Plugins: ${plugins}` : '',
+            jobIds    ? `Job IDs: ${jobIds}`  : '',
+          ].filter(Boolean).join('\n\n'),
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: 'Submission failed' }))
+        setSubmitError(err.message ?? 'Submission failed')
+        return
+      }
+      setSubmitted(true)
+    } catch {
+      setSubmitError('Network error — please try again.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (submitted) {
@@ -252,8 +287,13 @@ export default function SupportPage() {
               onChange={handleFiles} tabIndex={-1} />
           </SupportField>
 
-          <div className="pt-2">
-            <button type="submit" className="support-submit-btn">Submit</button>
+          <div className="pt-2 flex flex-col gap-2">
+            {submitError && (
+              <p className="text-sm text-red-500">{submitError}</p>
+            )}
+            <button type="submit" className="support-submit-btn" disabled={submitting}>
+              {submitting ? 'Submitting…' : 'Submit'}
+            </button>
           </div>
         </form>
       </div>

@@ -42,9 +42,33 @@ export async function POST(req: NextRequest) {
       ON CONFLICT (jti) DO NOTHING
     `
 
+    // Check account-level require_2fa setting
+    let requires2faSetup = false
+    try {
+      const tfaRows = await sql`
+        SELECT value FROM wrangler_settings WHERE key = 'require2fa' LIMIT 1
+      ` as Record<string, unknown>[]
+      const tfaOn = tfaRows.length > 0 && tfaRows[0].value === true
+      if (tfaOn) {
+        // If the user has no totp_secret column yet, flag setup required
+        const tfaCols = await sql`
+          SELECT column_name FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'totp_secret'
+        `
+        if (!tfaCols.length) {
+          requires2faSetup = true   // column doesn't exist → no one has 2FA set up
+        } else {
+          const secretRow = await sql`SELECT totp_secret FROM users WHERE id = ${user.id}`
+          const secret = (secretRow[0] as Record<string, unknown>)?.totp_secret
+          if (!secret) requires2faSetup = true
+        }
+      }
+    } catch { /* ignore — 2FA is best-effort */ }
+
     return NextResponse.json({
       access_token,
-      user: { id: String(user.id), email: user.email, isAdmin: user.is_admin },
+      user:               { id: String(user.id), email: user.email, isAdmin: user.is_admin },
+      requires2faSetup,   // frontend shows a notice if true
     })
   } catch (err) {
     console.error('Login error:', err)

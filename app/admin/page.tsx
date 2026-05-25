@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { admin as adminApi, projects as projectsApi, payments as paymentsApi } from '@/lib/api'
 import { useApiFetch } from '@/hooks/useApiFetch'
@@ -65,7 +65,27 @@ function UsersTab() {
   const { data: apiUsers, refetch } = useApiFetch(() => adminApi.users())
   const users: ManagedUser[] = (apiUsers as ManagedUser[] | null) ?? []
 
-  const handleSave = () => { setSaved(true); setTimeout(() => setSaved(false), 2000) }
+  // Load + persist the require2fa setting via wrangler-settings
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+    fetch('/api/wrangler-settings', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then((s: Record<string, unknown> | null) => {
+        if (s?.require2fa !== undefined) setRequire2fa(Boolean(s.require2fa))
+      })
+      .catch(() => null)
+  }, [])
+
+  const handleSave = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+    await fetch('/api/wrangler-settings', {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body:    JSON.stringify({ require2fa }),
+    }).catch(() => null)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
 
   const handleAddUser = async () => {
     if (!newEmail) return

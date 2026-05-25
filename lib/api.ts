@@ -128,6 +128,11 @@ export const jobs = {
 
   update: (id: string, data: { status?: string; outputs?: string[] }) =>
     request<ApiJob>(`/jobs?id=${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  scout: (jobNumber: string, frames: number[]) =>
+    request<{ jobNumber: string; id: string; frames: number[] }>(
+      `/jobs/${jobNumber}/scout`, { method: 'POST', body: JSON.stringify({ frames }) }
+    ),
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────

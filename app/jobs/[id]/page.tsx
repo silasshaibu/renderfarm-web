@@ -5,6 +5,103 @@ import Link from 'next/link'
 import { jobs as jobsApi, type ApiJob } from '@/lib/api'
 import { getToken, getUser } from '@/lib/auth'
 
+// ── Scout Frames modal ────────────────────────────────────────────────────────
+function ScoutModal({
+  jobNumber, frameStart, frameEnd,
+  onClose, onCreated,
+}: {
+  jobNumber: string; frameStart: number; frameEnd: number
+  onClose: () => void; onCreated: (newJobNum: string) => void
+}) {
+  const [input,   setInput]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [error,   setError]   = useState('')
+
+  const parseFrames = (s: string): number[] => {
+    const parts = s.split(',').map(p => p.trim()).filter(Boolean)
+    const out: number[] = []
+    for (const p of parts) {
+      // support "10-20" ranges inline
+      if (p.includes('-')) {
+        const [a, b] = p.split('-').map(Number)
+        if (!isNaN(a) && !isNaN(b)) {
+          for (let i = a; i <= b; i++) out.push(i)
+          continue
+        }
+      }
+      const n = parseInt(p, 10)
+      if (!isNaN(n)) out.push(n)
+    }
+    return [...new Set(out)].sort((a, b) => a - b)
+  }
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  const handleSubmit = async () => {
+    setError('')
+    const frames = parseFrames(input)
+    if (!frames.length) { setError('Enter at least one frame number.'); return }
+    const bad = frames.filter(f => f < frameStart || f > frameEnd)
+    if (bad.length) { setError(`Frame(s) out of range [${frameStart}–${frameEnd}]: ${bad.join(', ')}`); return }
+
+    setSaving(true)
+    try {
+      const token = localStorage.getItem('rf_token') ?? ''
+      const res = await fetch(`/api/jobs/${jobNumber}/scout`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ frames }),
+      })
+      const json = await res.json() as { jobNumber?: string; message?: string }
+      if (!res.ok) { setError(json.message ?? 'Failed to create scout job'); return }
+      onCreated(json.jobNumber ?? '')
+      onClose()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const mid = Math.round((frameStart + frameEnd) / 2)
+  const example = frameStart === frameEnd
+    ? String(frameStart)
+    : `${frameStart}, ${mid}, ${frameEnd}`
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-[#1a1d23] border border-white/10 rounded-xl p-6 w-full max-w-md shadow-2xl">
+        <h2 className="text-base font-semibold text-white mb-1">Scout Frames</h2>
+        <p className="text-xs text-gray-400 mb-4">
+          Render a subset of frames first to check quality.
+          Creates a new pending job. Range: {frameStart}–{frameEnd}.
+        </p>
+        <label className="block text-xs font-medium text-gray-300 mb-1" htmlFor="scout-frames">
+          Frame numbers <span className="text-gray-500">(comma-separated, or ranges like 10-20)</span>
+        </label>
+        <input
+          id="scout-frames" type="text" placeholder={`e.g. ${example}`}
+          value={input} onChange={e => setInput(e.target.value)}
+          className="calc-input px-3 py-2 w-full mb-3"
+          onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
+        />
+        {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="edit-modal-cancel">Cancel</button>
+          <button type="button" onClick={handleSubmit} disabled={saving} className="edit-modal-ok">
+            {saving ? 'Creating…' : 'Create Scout Job'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Per-frame task timing (from tasks table) ──────────────────────────────────
 interface TaskTiming {
   status:      string
@@ -117,6 +214,8 @@ export default function JobDetailPage({ params }: PageProps) {
   const [acting,      setActing]      = useState(false)
   const [taskPage,    setTaskPage]    = useState(1)
   const [selTask,     setSelTask]     = useState<number | null>(null)
+  const [showScout,   setShowScout]   = useState(false)
+  const [scoutCreated, setScoutCreated] = useState('')
 
   const loadTimings = useCallback(async (jobId: string) => {
     try {
@@ -370,6 +469,18 @@ export default function JobDetailPage({ params }: PageProps) {
             <span>Render progress</span>
             <div className="flex items-center gap-3">
               <span>{done} / {total} frames ({pct}%)</span>
+              {/* Scout Frames button — only on jobs that aren't done yet */}
+              {!['success','downloaded','done','failed'].includes(job.status) && total > 1 && (
+                <button type="button"
+                  className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 transition-colors"
+                  onClick={() => { setScoutCreated(''); setShowScout(true) }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  Scout Frames
+                </button>
+              )}
               {(job.outputs?.length ?? 0) > 0 && (
                 <button
                   type="button"
@@ -385,7 +496,7 @@ export default function JobDetailPage({ params }: PageProps) {
                         document.body.appendChild(a)
                         a.click()
                         document.body.removeChild(a)
-                      }, i * 300)  // stagger to avoid browser popup blocker
+                      }, i * 300)
                     })
                   }}
                 >
@@ -510,6 +621,26 @@ export default function JobDetailPage({ params }: PageProps) {
         </div>
 
       </div>
+
+      {/* ── Scout created toast ──────────────────────────────────────────── */}
+      {scoutCreated && (
+        <div className="fixed bottom-6 right-6 z-50 bg-amber-500/20 border border-amber-500/40 rounded-lg px-4 py-3 text-sm text-amber-300 shadow-xl flex items-center gap-3">
+          <span>Scout job <strong>{scoutCreated}</strong> created and queued.</span>
+          <button type="button" onClick={() => setScoutCreated('')}
+            className="text-amber-400 hover:text-amber-200 text-lg leading-none">×</button>
+        </div>
+      )}
+
+      {/* ── Scout Frames modal ───────────────────────────────────────────── */}
+      {showScout && job && (
+        <ScoutModal
+          jobNumber={job.jobNumber}
+          frameStart={start}
+          frameEnd={end}
+          onClose={() => setShowScout(false)}
+          onCreated={num => setScoutCreated(num)}
+        />
+      )}
     </div>
   )
 }
