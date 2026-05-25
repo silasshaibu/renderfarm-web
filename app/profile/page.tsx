@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { getToken } from '@/lib/auth'
+import { getToken, getUser } from '@/lib/auth'
 
 // ---------------------------------------------------------------------------
 // Shared UI primitives
@@ -92,6 +92,61 @@ async function apiFetch(path: string, method = 'GET', body?: object) {
 }
 
 // ---------------------------------------------------------------------------
+// Change password section
+// ---------------------------------------------------------------------------
+function ChangePasswordSection() {
+  const [current,  setCurrent]  = useState('')
+  const [next,     setNext]     = useState('')
+  const [confirm,  setConfirm]  = useState('')
+  const [saving,   setSaving]   = useState(false)
+  const [ok,       setOk]       = useState(false)
+  const [err,      setErr]      = useState('')
+
+  const handleSave = async () => {
+    setErr(''); setOk(false)
+    if (next.length < 8)        { setErr('New password must be at least 8 characters.'); return }
+    if (next !== confirm)       { setErr('Passwords do not match.'); return }
+    setSaving(true)
+    try {
+      const token = getToken() ?? ''
+      const res = await fetch('/api/profile/password', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ currentPassword: current, newPassword: next }),
+      })
+      const d = await res.json().catch(() => ({})) as { message?: string }
+      if (!res.ok) throw new Error(d.message ?? 'Update failed')
+      setOk(true)
+      setCurrent(''); setNext(''); setConfirm('')
+      setTimeout(() => setOk(false), 3000)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Update failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Section title="Security">
+      {ok  && <div className="enterprise-alert-success"><span>✓</span> Password updated</div>}
+      {err && <div className="text-red-400 text-sm bg-red-900/20 border border-red-900/40 rounded px-4 py-3">{err}</div>}
+      <FormField label="Current Password" id="pw-current">
+        <TextInput id="pw-current" type="password" value={current} onChange={setCurrent} placeholder="Current password" />
+      </FormField>
+      <FormField label="New Password" id="pw-new">
+        <TextInput id="pw-new" type="password" value={next} onChange={setNext} placeholder="Min 8 characters" />
+      </FormField>
+      <FormField label="Confirm New Password" id="pw-confirm">
+        <TextInput id="pw-confirm" type="password" value={confirm} onChange={setConfirm} placeholder="Repeat new password" />
+      </FormField>
+      <div className="flex justify-end pt-2">
+        <SaveBtn onClick={handleSave} saving={saving} />
+      </div>
+    </Section>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 const TIMEZONES = [
@@ -114,6 +169,10 @@ export default function ProfilePage() {
   const [country,   setCountry]   = useState('')
   const [accountName, setAccountName] = useState('')
   const [timezone,  setTimezone]  = useState('Africa/Accra')
+  const [isAdmin,   setIsAdmin]   = useState(false)
+  const [createdAt, setCreatedAt] = useState('')
+  const [jobCount,  setJobCount]  = useState<number | null>(null)
+  const [totalSpend, setTotalSpend] = useState<number | null>(null)
 
   // Notification prefs (client-only for now)
   const [emailNotifs,  setEmailNotifs]  = useState(true)
@@ -123,11 +182,19 @@ export default function ProfilePage() {
 
   // ── Load profile on mount ───────────────────────────────────────────────────
   const load = useCallback(async () => {
+    // Snapshot admin flag from client token immediately (no flicker)
+    const localUser = getUser()
+    if (localUser?.isAdmin) setIsAdmin(true)
+
     try {
-      const data = await apiFetch('/api/profile') as {
-        firstName: string; lastName: string; email: string
-        phone: string; company: string; country: string; accountName: string
-      }
+      const [data, jobs] = await Promise.all([
+        apiFetch('/api/profile') as Promise<{
+          firstName: string; lastName: string; email: string
+          phone: string; company: string; country: string
+          accountName: string; isAdmin: boolean; createdAt?: string
+        }>,
+        apiFetch('/api/jobs').catch(() => [] as unknown[]),
+      ])
       setFirstName(data.firstName)
       setLastName(data.lastName)
       setEmail(data.email)
@@ -135,6 +202,16 @@ export default function ProfilePage() {
       setCompany(data.company ?? '')
       setCountry(data.country ?? '')
       setAccountName(data.accountName ?? '')
+      setIsAdmin(Boolean(data.isAdmin))
+      if (data.createdAt) setCreatedAt(data.createdAt)
+
+      // Compute stats from jobs list
+      if (Array.isArray(jobs)) {
+        setJobCount(jobs.length)
+        const spend = (jobs as Array<{ costUsd?: number }>)
+          .reduce((acc, j) => acc + (j.costUsd ?? 0), 0)
+        setTotalSpend(spend)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load profile')
     } finally {
@@ -173,9 +250,38 @@ export default function ProfilePage() {
   return (
     <div className="flex flex-col gap-6 max-w-3xl">
       <div>
-        <h1 className="text-2xl font-semibold text-white tracking-tight">Profile</h1>
-        <p className="mt-1 text-sm text-gray-500">Manage your account details and preferences</p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-2xl font-semibold text-white tracking-tight">Profile</h1>
+          {isAdmin && (
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-900/50 text-blue-300 border border-blue-700/40">
+              Admin
+            </span>
+          )}
+        </div>
+        <p className="mt-1 text-sm text-gray-500">
+          Manage your account details and preferences
+          {createdAt && (
+            <span className="ml-2 text-gray-600">
+              · Member since {new Date(createdAt).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
+            </span>
+          )}
+        </p>
       </div>
+
+      {/* Account stats strip */}
+      {jobCount !== null && (
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { label: 'Jobs submitted', value: String(jobCount) },
+            { label: 'Total spend',    value: `$${(totalSpend ?? 0).toFixed(2)}` },
+          ].map(({ label, value }) => (
+            <div key={label} className="calc-card text-center py-4">
+              <p className="text-2xl font-bold text-white">{value}</p>
+              <p className="text-xs text-gray-500 mt-1">{label}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {saved && (
         <div className="enterprise-alert-success"><span>✓</span> Changes saved successfully</div>
@@ -229,6 +335,9 @@ export default function ProfilePage() {
           <SaveBtn onClick={handleSave} saving={saving} />
         </div>
       </Section>
+
+      {/* Change password */}
+      <ChangePasswordSection />
 
       {/* API Key */}
       <Section title="API Key">

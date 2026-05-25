@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
     country:     (r.country     as string) ?? '',
     accountName: (r.account_name as string) ?? '',
     isAdmin:     Boolean(r.is_admin),
+    createdAt:   r.created_at   as string,
   })
 }
 

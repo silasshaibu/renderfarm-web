@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
+import { sendEmail, jobCompleteEmail } from '@/lib/email'
 
 
 
@@ -151,5 +152,41 @@ export async function PATCH(req: NextRequest) {
   `
 
   if (!rows.length) return NextResponse.json({ message: 'Job not found' }, { status: 404 })
-  return NextResponse.json(rowToJob(rows[0] as Record<string, unknown>))
+
+  const updatedJob = rowToJob(rows[0] as Record<string, unknown>)
+
+  // Send job-complete email when the worker marks a job 'success'
+  if (body.status === 'success') {
+    try {
+      // Look up the job owner's email via the user_id stored in the job manifest,
+      // or fall back to looking up by the authenticated user's sub.
+      const ownerRows = await sql`
+        SELECT u.email FROM users u
+        INNER JOIN jobs j ON j.manifest->>'submitter_email' = u.email
+                         OR u.id = ${(rows[0] as Record<string,unknown>).id}
+        WHERE j.id = ${id}
+        LIMIT 1
+      ` as Record<string, unknown>[]
+
+      // Simpler: look up the user who owns this token (the worker reuses the artist's token)
+      const userRows = await sql`SELECT email FROM users WHERE id = ${user.sub} LIMIT 1` as Record<string, unknown>[]
+      const ownerEmail = (userRows[0]?.email ?? ownerRows[0]?.email) as string | undefined
+
+      if (ownerEmail) {
+        const outputs = (updatedJob.outputs ?? []) as string[]
+        await sendEmail({
+          to:      ownerEmail,
+          subject: `Render complete: ${updatedJob.jobNumber}`,
+          html:    jobCompleteEmail({
+            email:      ownerEmail,
+            jobNumber:  String(updatedJob.jobNumber),
+            title:      String(updatedJob.title),
+            frameCount: outputs.length,
+          }),
+        })
+      }
+    } catch { /* email is best-effort */ }
+  }
+
+  return NextResponse.json(updatedJob)
 }

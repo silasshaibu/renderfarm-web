@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
+import { sendEmail, supportConfirmEmail } from '@/lib/email'
 
 // ── POST /api/support ─────────────────────────────────────────────────────────
 // Submit a support ticket. Auth optional — logged-in users pre-fill email.
@@ -34,8 +35,21 @@ export async function POST(req: NextRequest) {
     RETURNING id, created_at
   ` as Record<string, unknown>[]
 
+  const ticketId = rows[0].id as number
+
+  // Send confirmation email (best-effort — don't fail the request if email is misconfigured)
+  await sendEmail({
+    to:      body.email!.trim(),
+    subject: `Support request received — ticket #${ticketId}`,
+    html:    supportConfirmEmail({
+      email:    body.email!.trim(),
+      subject:  body.subject?.trim() ?? 'Support request',
+      ticketId,
+    }),
+  })
+
   return NextResponse.json({
-    id:        rows[0].id,
+    id:        ticketId,
     createdAt: rows[0].created_at,
     message:   'Ticket submitted successfully',
   }, { status: 201 })
