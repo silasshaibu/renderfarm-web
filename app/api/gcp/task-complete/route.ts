@@ -21,15 +21,19 @@ export async function POST(req: NextRequest) {
     status: string
   }
 
-  // Mark the task done in the tasks table
+  // Upsert the task row — GCP jobs don't pre-create task rows
+  const jobRows2 = await sql`SELECT id FROM jobs WHERE id = ${jobId} LIMIT 1`
+  if (!jobRows2.length) return NextResponse.json({ ok: true })
+  const jobIdInt = Number((jobRows2[0] as Record<string, unknown>).id)
+
   await sql`
-    UPDATE tasks
-    SET status       = ${status},
-        completed_at = NOW()
-    WHERE job_id = ${jobId} AND frame_number = ${frame}
+    INSERT INTO tasks (job_id, frame_index, frame_number, status, completed_at)
+    VALUES (${jobIdInt}, ${frame - 1}, ${frame}, ${status}, NOW())
+    ON CONFLICT (job_id, frame_index)
+    DO UPDATE SET status = ${status}, completed_at = NOW()
   `
 
-  // Count how many tasks are complete vs total
+  // Load job details
   const jobRows = await sql`SELECT * FROM jobs WHERE id = ${jobId} LIMIT 1`
   if (!jobRows.length) return NextResponse.json({ ok: true })
 
@@ -44,11 +48,11 @@ export async function POST(req: NextRequest) {
 
   const doneRows = await sql`
     SELECT COUNT(*) AS cnt FROM tasks
-    WHERE job_id = ${jobId} AND status = 'complete'
+    WHERE job_id = ${jobIdInt} AND status = 'complete'
   `
   const doneCount = Number((doneRows[0] as Record<string, unknown>).cnt)
 
-  // If there are held frames, unhold them now that the scout succeeded
+  // If there are held frames, unhold them now that the scout frame succeeded
   if (heldFrames.length > 0 && doneCount === 1) {
     const appUrl       = process.env.NEXT_PUBLIC_APP_URL ?? 'https://renderfarm-web.vercel.app'
     const gcsScenePath = job.gcs_scene_path as string

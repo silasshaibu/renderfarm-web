@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 import { sendEmail, jobCompleteEmail } from '@/lib/email'
+import { spawnJobVMs } from '@/lib/gcp/compute'
+import { INTERNAL_SECRET } from '@/lib/gcp/clients'
+import { parseFrameRange } from '@/lib/utils/frames'
 
 
 
@@ -25,6 +28,9 @@ function rowToJob(row: Record<string, unknown>) {
     workerHost:         row.worker_host          ?? '',
     statusDescription:  row.status_description   ?? '',
     costUsd:            Number(row.cost_usd      ?? 0),
+    provider:           (row.provider as string)  ?? 'renderfarm',
+    gcsScenePath:       (row.gcs_scene_path as string) ?? '',
+    heldFrames:         (row.held_frames as number[]) ?? [],
   }
 }
 
@@ -64,6 +70,10 @@ export async function POST(req: NextRequest) {
     assets_total?:       number
     assets_uploaded?:    number
     status_description?: string
+    provider?:           string   // 'renderfarm' | 'gcp'
+    gcs_scene_path?:     string   // GCS path after direct upload e.g. jobs/abc/scene.blend
+    machine_type?:       string   // GCP machine type e.g. 'n1-standard-4'
+    preemptible?:        boolean
   }
 
   // Validate status — all 12 Conductor statuses + legacy DB names
@@ -87,12 +97,14 @@ export async function POST(req: NextRequest) {
   const assetsUploaded     = data.assets_uploaded  ?? 0
   const outputPath         = data.output_folder    ?? ''
   const statusDescription  = data.status_description ?? ''
+  const provider           = data.provider         ?? 'renderfarm'
+  const gcsScenePath       = data.gcs_scene_path   ?? ''
 
   const rows = await sql`
     INSERT INTO jobs (
       job_number, title, frames, software, blender_file, status,
       manifest, assets_total, assets_uploaded,
-      output_path, status_description
+      output_path, status_description, provider, gcs_scene_path
     )
     VALUES (
       ${jobNumber},
@@ -105,12 +117,43 @@ export async function POST(req: NextRequest) {
       ${assetsTotal},
       ${assetsUploaded},
       ${outputPath},
-      ${statusDescription}
+      ${statusDescription},
+      ${provider},
+      ${gcsScenePath}
     )
     RETURNING *
   `
 
   const job = rowToJob(rows[0] as Record<string, unknown>)
+
+  // ── Auto-dispatch GCP VMs if this is a GCP job with a scene file ────────────
+  if (provider === 'gcp' && gcsScenePath) {
+    try {
+      const frames      = parseFrameRange(data.frames ?? '1-1')
+      const scoutFrames = [frames[0]]
+      const heldFrames  = frames.slice(1)
+      const appUrl      = process.env.NEXT_PUBLIC_APP_URL ?? 'https://renderfarm-web.vercel.app'
+      const machineType = data.machine_type ?? 'n1-standard-4'
+      const preemptible = data.preemptible  ?? true
+
+      await spawnJobVMs(
+        String(job.id), scoutFrames, gcsScenePath,
+        machineType, preemptible, appUrl, INTERNAL_SECRET
+      )
+
+      await sql`
+        UPDATE jobs
+        SET status      = 'running',
+            held_frames = ${JSON.stringify(heldFrames)}::jsonb,
+            updated_at  = NOW()
+        WHERE id = ${job.id}
+      `
+    } catch (err) {
+      console.error('[jobs POST] GCP dispatch failed:', err)
+      // Job is created — dispatch failure is non-fatal, user can retry via /api/gcp/dispatch
+    }
+  }
+
   return NextResponse.json({ jobNumber: job.jobNumber, id: job.id }, { status: 201 })
 }
 
