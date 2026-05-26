@@ -70,8 +70,8 @@ export async function spawnRenderVM(
       autoDelete: true,
       initializeParams: {
         sourceImage: RENDER_IMAGE,
-        // diskSizeGb must be a string for proto3 int64 serialisation
-        diskSizeGb: String(50),
+        // disk size inherited from the source image (50 GB render-node-v1)
+        // do NOT pass diskSizeGb — proto3 int64 serialisation chokes on it
       },
     }],
 
