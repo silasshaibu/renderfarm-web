@@ -4,22 +4,68 @@ export interface RenderTaskConfig {
   jobId      : string
   frameNumber: number
   gcsScenePath: string   // e.g. jobs/abc123/scene.blend
-  machineType : string   // e.g. 'n1-standard-4'
+  machineType : string   // GCP machine type string — see MACHINE_TYPE_MAP
   preemptible : boolean
+}
+
+/**
+ * Map the addon's human-readable machine-type identifier to the real GCP machine type string
+ * plus any GPU accelerator that must be attached separately.
+ *
+ * A100 (a2-*) and L4 (g2-*) have the GPU baked into the machine family — no accelerators block needed.
+ * T4 and V100 are attached as accelerators on top of an n1-standard-* base machine.
+ *
+ * Docs: https://cloud.google.com/compute/docs/gpus
+ */
+const MACHINE_TYPE_MAP: Record<string, {
+  gcpType     : string
+  accelerator?: { type: string; count: number }  // only for T4 / V100
+}> = {
+  // ── A100 80 GB (a2-ultragpu family) ─────────────────────────────────────────
+  'a100-80gb-1': { gcpType: 'a2-ultragpu-1g' },
+  // ── A100 40 GB (a2-highgpu family) ──────────────────────────────────────────
+  'a100-40gb-1': { gcpType: 'a2-highgpu-1g' },
+  // ── L4 24 GB (g2-standard family) ───────────────────────────────────────────
+  'l4-1':        { gcpType: 'g2-standard-8' },
+  // ── T4 16 GB — attached accelerator on n1-standard-4 ────────────────────────
+  't4-1': {
+    gcpType    : 'n1-standard-4',
+    accelerator: { type: `zones/${GCP_ZONE}/acceleratorTypes/nvidia-tesla-t4`, count: 1 },
+  },
+  // ── V100 16 GB — attached accelerator on n1-standard-8 ──────────────────────
+  'v100-1': {
+    gcpType    : 'n1-standard-8',
+    accelerator: { type: `zones/${GCP_ZONE}/acceleratorTypes/nvidia-tesla-v100`, count: 1 },
+  },
 }
 
 /**
  * Build the startup script that runs inside the VM.
  * VM boots → mounts GCS → runs Blender → writes output → calls task-complete → self-deletes.
  */
-function buildStartupScript(config: RenderTaskConfig, appUrl: string, internalSecret: string): string {
+function buildStartupScript(
+  config      : RenderTaskConfig,
+  appUrl      : string,
+  internalSecret: string,
+  useGpu      : boolean,
+): string {
   const { jobId, frameNumber, gcsScenePath } = config
-  const outputPath = `/mnt/render/output/${jobId}`
+  const outputPath  = `/mnt/render/output/${jobId}`
   const paddedFrame = String(frameNumber).padStart(4, '0')
+
+  // GPU VMs need CUDA initialised before Blender starts.
+  // The render-node image must have the NVIDIA driver + CUDA toolkit installed.
+  const gpuInit = useGpu ? `
+# ── GPU: initialise CUDA / verify driver ──────────────────────────────────────
+nvidia-smi || { echo "ERROR: nvidia-smi failed — GPU driver not ready"; exit 1; }
+` : ''
+
+  // --cycles-device CUDA tells Blender to use the GPU; omit it for CPU machines.
+  const cyclesDevice = useGpu ? '--cycles-device CUDA' : ''
 
   return `#!/bin/bash
 set -e
-
+${gpuInit}
 # ── 1. Mount GCS bucket ────────────────────────────────────────────────────────
 mkdir -p /mnt/render
 gcsfuse --implicit-dirs ${GCP_BUCKET} /mnt/render
@@ -35,10 +81,11 @@ curl -s -X POST ${appUrl}/api/gcp/task-start \\
   -d '{"jobId":"${jobId}","frame":${frameNumber}}'
 
 # ── 4. Run Blender render ──────────────────────────────────────────────────────
-echo "Rendering job=${jobId} frame=${frameNumber}"
+echo "Rendering job=${jobId} frame=${frameNumber} gpu=${useGpu}"
 blender -b /mnt/render/${gcsScenePath} \\
   --python-expr "import bpy; bpy.context.scene.cycles.use_denoising = False" \\
   -E CYCLES \\
+  ${cyclesDevice} \\
   -o "${outputPath}/${paddedFrame}" \\
   -f ${frameNumber} \\
   -F PNG
@@ -65,12 +112,24 @@ export async function spawnRenderVM(
   appUrl: string,
   internalSecret: string
 ): Promise<string> {
-  const vmName        = `render-${config.jobId.slice(0, 8)}-f${config.frameNumber}`.toLowerCase()
-  const startupScript = buildStartupScript(config, appUrl, internalSecret)
+  const vmName = `render-${config.jobId.slice(0, 8)}-f${config.frameNumber}`.toLowerCase()
 
-  const instanceResource = {
+  // Resolve the addon's human-readable ID → real GCP machine type + optional accelerator.
+  // Fall back to the raw string for CPU machine types (n1-standard-*, c2-*, etc.)
+  const resolved   = MACHINE_TYPE_MAP[config.machineType]
+  const gcpType    = resolved?.gcpType    ?? config.machineType
+  const accelerator = resolved?.accelerator ?? null
+  const useGpu     = accelerator != null || (resolved != null && !config.machineType.startsWith('n1-'))
+
+  const startupScript = buildStartupScript(config, appUrl, internalSecret, useGpu)
+
+  // GPU VMs (and preemptible VMs) must use TERMINATE on host maintenance.
+  // Standard CPU VMs can MIGRATE which is cheaper/safer.
+  const mustTerminate = config.preemptible || useGpu
+
+  const instanceResource: Record<string, unknown> = {
     name       : vmName,
-    machineType: `zones/${GCP_ZONE}/machineTypes/${config.machineType}`,
+    machineType: `zones/${GCP_ZONE}/machineTypes/${gcpType}`,
 
     disks: [{
       boot      : true,
@@ -103,14 +162,24 @@ export async function spawnRenderVM(
     // serialisation issues in the Node.js client; default behaviour is correct.
     scheduling: {
       preemptible      : config.preemptible,
-      onHostMaintenance: config.preemptible ? 'TERMINATE' : 'MIGRATE',
+      onHostMaintenance: mustTerminate ? 'TERMINATE' : 'MIGRATE',
     },
 
     labels: {
       'job-id'    : config.jobId.slice(0, 8),
       'frame'     : String(config.frameNumber),
       'managed-by': 'renderfarm',
+      'gpu'       : useGpu ? 'true' : 'false',
     },
+  }
+
+  // Attach GPU accelerator for machine types that need it (T4, V100).
+  // A100 (a2-*) and L4 (g2-*) have the GPU built into the machine family.
+  if (accelerator) {
+    instanceResource.guestAccelerators = [{
+      acceleratorType : accelerator.type,
+      acceleratorCount: accelerator.count,
+    }]
   }
 
   await computeClient.insert({
@@ -119,7 +188,7 @@ export async function spawnRenderVM(
     instanceResource,
   })
 
-  console.log(`VM spawned: ${vmName}`)
+  console.log(`VM spawned: ${vmName} (gcpType=${gcpType}, gpu=${useGpu})`)
   return vmName
 }
 
