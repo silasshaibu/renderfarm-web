@@ -6,14 +6,15 @@ import { INTERNAL_SECRET } from '@/lib/gcp/clients'
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { jobNumber: string } }
+  context: { params: Promise<{ jobNumber: string }> }
 ) {
   const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()
+  const { jobNumber } = await context.params
 
-  const rows = await sql`SELECT * FROM jobs WHERE job_number = ${params.jobNumber} LIMIT 1`
+  const rows = await sql`SELECT * FROM jobs WHERE job_number = ${jobNumber} LIMIT 1`
   if (!rows.length) return NextResponse.json({ message: 'Job not found' }, { status: 404 })
 
   const job        = rows[0] as Record<string, unknown>
