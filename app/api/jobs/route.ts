@@ -31,6 +31,7 @@ function rowToJob(row: Record<string, unknown>) {
     provider:           (row.provider as string)  ?? 'renderfarm',
     gcsScenePath:       (row.gcs_scene_path as string) ?? '',
     heldFrames:         (row.held_frames as number[]) ?? [],
+    avgFrameSec:        row.avg_frame_sec != null ? Number(row.avg_frame_sec) : null,
   }
 }
 
@@ -43,12 +44,29 @@ export async function GET(req: NextRequest) {
 
   const jobNumber = req.nextUrl.searchParams.get('jobNumber')
   if (jobNumber) {
-    const rows = await sql`SELECT * FROM jobs WHERE job_number = ${jobNumber}`
+    const rows = await sql`
+      SELECT j.*,
+        ROUND(AVG(EXTRACT(EPOCH FROM (t.completed_at - t.started_at)))) AS avg_frame_sec
+      FROM jobs j
+      LEFT JOIN tasks t ON t.job_id = j.id
+        AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL
+      WHERE j.job_number = ${jobNumber}
+      GROUP BY j.id
+      LIMIT 1
+    `
     if (!rows.length) return NextResponse.json({ message: 'Job not found' }, { status: 404 })
     return NextResponse.json(rowToJob(rows[0] as Record<string, unknown>))
   }
 
-  const rows = await sql`SELECT * FROM jobs ORDER BY created_at DESC`
+  const rows = await sql`
+    SELECT j.*,
+      ROUND(AVG(EXTRACT(EPOCH FROM (t.completed_at - t.started_at)))) AS avg_frame_sec
+    FROM jobs j
+    LEFT JOIN tasks t ON t.job_id = j.id
+      AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL
+    GROUP BY j.id
+    ORDER BY j.created_at DESC
+  `
   return NextResponse.json(rows.map(r => rowToJob(r as Record<string, unknown>)))
 }
 

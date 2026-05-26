@@ -8,6 +8,13 @@ import { useApiFetch } from '@/hooks/useApiFetch'
 import { isLoggedIn } from '@/lib/auth'
 import type { Job, JobStatus } from '@/types/job'
 
+function fmtAvgFrame(sec: number | null | undefined): string {
+  if (sec == null) return '—'
+  if (sec >= 3600) return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`
+  if (sec >= 60)   return `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`
+  return `${Math.round(sec)}s`
+}
+
 // Map API job → UI Job shape
 function mapJob(j: ApiJob): Job {
   const parts   = j.frames?.replace(/\s/g, '').split('-') ?? ['1']
@@ -49,7 +56,7 @@ function mapJob(j: ApiJob): Job {
     preemptible: true,
     progress,
     tasks:       total,
-    avgFrame:    '—',
+    avgFrame:    fmtAvgFrame(j.avgFrameSec),
     created:     j.createdAt,
     cost:        j.costUsd ?? 0,
   }

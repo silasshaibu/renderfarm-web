@@ -116,6 +116,10 @@ export interface ApiJob {
   workerHost?:       string   // hostname of the render worker that picked up the job
   statusDescription?: string  // human-readable detail (e.g. "Waiting for GPU worker")
   costUsd?:          number   // computed from tasks timing: cores*$0.03/hr + GPUs*$0.45/hr
+  avgFrameSec?:      number | null   // average seconds per completed frame (from tasks table)
+  provider?:         string
+  gcsScenePath?:     string
+  heldFrames?:       number[]
 }
 
 export const jobs = {
