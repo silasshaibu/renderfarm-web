@@ -57,7 +57,7 @@ function mapJob(j: ApiJob): Job {
 
 export default function JobsPage() {
   const router = useRouter()
-  const { data, loading, error, refetch } = useApiFetch(() => jobsApi.list())
+  const { data, loading, syncing, error, refetch } = useApiFetch(() => jobsApi.list())
 
   // ── Poll every 5 s (same as job-detail page) ────────────────────────────────
   const refetchRef = useRef(refetch)
@@ -112,6 +112,14 @@ export default function JobsPage() {
         <div className="text-sm text-gray-500 py-12 text-center">Loading jobs…</div>
       ) : (
         <JobsTable jobs={mappedJobs} onActionDone={handleActionDone} />
+      )}
+
+      {/* Small syncing indicator — shown during background polls, never blinks the table */}
+      {syncing && (
+        <div className="jobs-sync-pill">
+          <span className="jobs-sync-dot" />
+          Processing
+        </div>
       )}
     </div>
   )

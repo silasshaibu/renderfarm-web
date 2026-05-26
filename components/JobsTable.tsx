@@ -244,12 +244,20 @@ function ContextMenu({ x, y, job, onClose, onAction, onInstanceType, onPriority 
     }
   }, [onClose])
 
-  const isHolding = job.status === 'holding'
+  const s         = job.status
+  const isHolding = s === 'holding'
+  const isActive  = ['pending', 'queued', 'running', 'holding', 'uploading',
+                      'upload_pending', 'sync_pending', 'syncing', 'sync_failed'].includes(s)
+  const isTerminal = ['failed', 'killed', 'preempted', 'success', 'downloaded', 'done'].includes(s)
+  const canRetry  = ['failed', 'killed', 'preempted'].includes(s)
 
   /** Convenience: action button with tooltip */
-  const btn = (label: string, next: string, tip: string) => (
-    <button type="button" className="ctx-menu-item" title={tip}
-      onClick={() => { onAction(job, next); onClose() }}>
+  const btn = (label: string, next: string, tip: string, disabled = false) => (
+    <button type="button"
+      className={`ctx-menu-item${disabled ? ' ctx-menu-item--disabled' : ''}`}
+      title={tip}
+      disabled={disabled}
+      onClick={() => { if (!disabled) { onAction(job, next); onClose() } }}>
       {label}
     </button>
   )
@@ -257,50 +265,55 @@ function ContextMenu({ x, y, job, onClose, onAction, onInstanceType, onPriority 
   return (
     <div ref={ref} className="ctx-menu">
 
-      {/* Hold */}
+      {/* Hold — only for active jobs */}
       <button type="button"
-        title="Pauses tasks without cancelling them. Tasks can be unholded later."
-        className={`ctx-menu-item${isHolding ? ' ctx-menu-item--disabled' : ''}`}
-        disabled={isHolding}
-        onClick={() => { if (!isHolding) { onAction(job, 'holding'); onClose() } }}>
+        title={isActive && !isHolding ? 'Pauses tasks without cancelling them.' : 'Only available on active jobs.'}
+        className={`ctx-menu-item${(!isActive || isHolding) ? ' ctx-menu-item--disabled' : ''}`}
+        disabled={!isActive || isHolding}
+        onClick={() => { if (isActive && !isHolding) { onAction(job, 'holding'); onClose() } }}>
         Hold
       </button>
 
+      {/* Kill — only for active jobs */}
       {btn('Kill',
-        'failed',
-        'Hard termination — stops all running tasks immediately with no retry.')}
+        'killed',
+        isActive ? 'Hard termination — stops all running tasks immediately.' : 'Only available on active jobs.',
+        !isActive)}
 
+      {/* Retry — only for terminal error states */}
       {btn('Retry',
-        'queued',
-        'Re-queues every task in the job from scratch, regardless of current state.')}
+        'pending',
+        canRetry ? 'Re-queues the job from scratch.' : 'Only available on failed, killed or preempted jobs.',
+        !canRetry)}
 
       {btn('Retry Failed',
-        'queued',
-        'Restarts only failed tasks (non-zero return code). Leaves successful tasks untouched.')}
+        'pending',
+        canRetry ? 'Restarts only failed tasks.' : 'Only available on failed jobs.',
+        !canRetry)}
 
       {btn('Retry Preempted',
-        'queued',
-        'Restarts only tasks interrupted by cloud preemption on spot instances.')}
+        'pending',
+        s === 'preempted' ? 'Restarts tasks interrupted by cloud preemption.' : 'Only available on preempted jobs.',
+        s !== 'preempted')}
 
       {btn('Retry Sync',
-        'queued',
-        'Retries the asset-sync phase. Use when files failed to transfer to render nodes (sync_failed).')}
+        'pending',
+        s === 'sync_failed' ? 'Retries the asset-sync phase.' : 'Only available on sync_failed jobs.',
+        s !== 'sync_failed')}
 
-      {/* Reviewed — bookkeeping flag, no execution change */}
+      {/* Reviewed — bookkeeping only */}
       <button type="button" className="ctx-menu-item"
         title="Marks the job as reviewed. Bookkeeping only — does not affect rendering."
         onClick={() => onClose()}>
         Reviewed
       </button>
 
-      {/* Unhold — only enabled when job is on hold */}
+      {/* Unhold — only when holding */}
       <button type="button"
-        title={isHolding
-          ? 'Releases held tasks back into the queue.'
-          : 'Only available when the job is on hold.'}
+        title={isHolding ? 'Releases held tasks back into the queue.' : 'Only available when the job is on hold.'}
         className={`ctx-menu-item${!isHolding ? ' ctx-menu-item--disabled' : ''}`}
         disabled={!isHolding}
-        onClick={() => { if (isHolding) { onAction(job, 'queued'); onClose() } }}>
+        onClick={() => { if (isHolding) { onAction(job, 'pending'); onClose() } }}>
         Unhold
       </button>
 

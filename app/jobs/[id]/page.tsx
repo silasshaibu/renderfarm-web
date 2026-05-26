@@ -143,13 +143,14 @@ const STATUS_CFG: Record<string, { globe: string; label: string }> = {
   success:        { globe: 'success',        label: 'success'        },
   downloaded:     { globe: 'downloaded',     label: 'downloaded'     },
   failed:         { globe: 'failed',         label: 'failed'         },
+  killed:         { globe: 'killed',         label: 'killed'         },
   preempted:      { globe: 'preempted',      label: 'preempted'      },
 }
 
 // ── Action buttons per job status ─────────────────────────────────────────────
 const HOLD   = { label: 'Hold',         next: 'holding',  style: 'btn-action--warn'    }
 const UNHOLD = { label: 'Unhold',       next: 'pending',  style: 'btn-action--primary' }
-const KILL   = { label: 'Kill',         next: 'failed',   style: 'btn-action--danger'  }
+const KILL   = { label: 'Kill',         next: 'killed',   style: 'btn-action--danger'  }
 const RETRY  = { label: 'Retry',        next: 'pending',  style: 'btn-action--primary' }
 const RSYNC  = { label: 'Retry Sync',   next: 'syncing',  style: 'btn-action--warn'    }
 
@@ -157,7 +158,7 @@ const ACTIONS: Record<string, { label: string; next: string; style: string }[]> 
   // Legacy
   queued:         [HOLD, KILL],
   done:           [],
-  // All 12 Conductor statuses
+  // All 12 Conductor statuses — Kill only on active/in-flight states
   upload_pending: [KILL],
   uploading:      [KILL],
   sync_pending:   [KILL],
@@ -166,17 +167,19 @@ const ACTIONS: Record<string, { label: string; next: string; style: string }[]> 
   pending:        [HOLD, KILL],
   holding:        [UNHOLD, KILL],
   running:        [HOLD, KILL],
-  success:        [RETRY],
-  downloaded:     [],
-  failed:         [RETRY, KILL],
-  preempted:      [RETRY, KILL],
+  // Terminal states — no Kill (can't kill what's already stopped)
+  success:        [],           // succeeded — nothing to do
+  downloaded:     [],           // fully done — nothing to do
+  failed:         [RETRY],      // failed — try again
+  killed:         [RETRY],      // manually killed — can re-queue if needed
+  preempted:      [RETRY],      // cloud reclaimed it — try again
 }
 
 // ── Per-frame task status ─────────────────────────────────────────────────────
 type TaskStatus = 'done' | 'running' | 'failed' | 'holding' | 'pending'
 
 const DONE_STATUSES     = new Set(['done', 'success', 'downloaded'])
-const FAILED_STATUSES   = new Set(['failed'])
+const FAILED_STATUSES   = new Set(['failed', 'killed'])
 const HOLDING_STATUSES  = new Set(['holding'])
 const PENDING_STATUSES  = new Set(['queued', 'uploading', 'upload_pending', 'sync_pending', 'sync_failed', 'syncing', 'pending', 'preempted'])
 

@@ -1478,6 +1478,7 @@ select.cost-limit-field {
 .job-status-globe-success        { background: radial-gradient(circle at 35% 32%, #34d399, #059669); }
 .job-status-globe-downloaded     { background: radial-gradient(circle at 35% 32%, #34d399, #059669); }
 .job-status-globe-failed         { background: radial-gradient(circle at 35% 32%, #f87171, #b91c1c); }
+.job-status-globe-killed         { background: radial-gradient(circle at 35% 32%, #9ca3af, #6b7280); }
 .job-status-globe-preempted      { background: radial-gradient(circle at 35% 32%, #fb923c, #c2410c); }
 /* Legacy DB names */
 .job-status-globe-queued         { background: radial-gradient(circle at 35% 32%, #60a5fa, #2563eb); }
@@ -2177,6 +2178,38 @@ select.cost-limit-field {
   color: #6b7280;
   font-size: 0.78rem;
   font-weight: 500;
+}
+
+/* Small syncing pill — bottom-right, replaces the table blink */
+.jobs-sync-pill {
+  position: fixed;
+  bottom: 24px;
+  right: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 14px;
+  border-radius: 9999px;
+  background: rgba(15,15,20,0.85);
+  border: 1px solid rgba(99,102,241,0.35);
+  color: #a5b4fc;
+  font-size: 0.78rem;
+  font-weight: 500;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  z-index: 50;
+}
+.jobs-sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #818cf8;
+  animation: sync-pulse 1.2s ease-in-out infinite;
+}
+@keyframes sync-pulse {
+  0%, 100% { opacity: 1;   }
+  50%       { opacity: 0.3; }
 }
 
 /* Submit Job button in jobs header */

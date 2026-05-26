@@ -55,6 +55,9 @@ export async function initDB() {
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS status_description TEXT DEFAULT ''`
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 5`
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cost_usd NUMERIC(10,4) DEFAULT 0`
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS provider TEXT DEFAULT 'renderfarm'`
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS gcs_scene_path TEXT DEFAULT ''`
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS held_frames JSONB DEFAULT '[]'`
 
   // ── Wrangler settings — per-account key/value store ──────────────────────────
   await sql`
