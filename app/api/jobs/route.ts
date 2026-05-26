@@ -32,6 +32,7 @@ function rowToJob(row: Record<string, unknown>) {
     gcsScenePath:       (row.gcs_scene_path as string) ?? '',
     heldFrames:         (row.held_frames as number[]) ?? [],
     avgFrameSec:        row.avg_frame_sec != null ? Number(row.avg_frame_sec) : null,
+    projectId:          row.project_id != null ? Number(row.project_id) : null,
   }
 }
 
@@ -92,6 +93,28 @@ export async function POST(req: NextRequest) {
     gcs_scene_path?:     string   // GCS path after direct upload e.g. jobs/abc/scene.blend
     machine_type?:       string   // GCP machine type e.g. 'n1-standard-4'
     preemptible?:        boolean
+    project_id?:         number | string  // required — must be an active project
+    projectId?:          number | string  // camelCase alias sent by SubmissionKit renderfarm path
+    project?:            number | string  // string ID alias sent by the Blender addon
+  }
+
+  // ── Project validation — every job must belong to an active project ─────────
+  const rawProjectId = data.project_id ?? data.projectId ?? data.project
+  const projectIdNum = rawProjectId ? Number(rawProjectId) : null
+  if (!projectIdNum) {
+    return NextResponse.json(
+      { message: 'A project is required to submit a job. Please create and activate a project in Admin → Projects first.' },
+      { status: 400 }
+    )
+  }
+  const projectRows = await sql`
+    SELECT id FROM projects WHERE id = ${projectIdNum} AND is_active = TRUE LIMIT 1
+  `
+  if (!projectRows.length) {
+    return NextResponse.json(
+      { message: 'Project not found or not active. Select an active project before submitting.' },
+      { status: 400 }
+    )
   }
 
   // Validate status — all 12 Conductor statuses + legacy DB names
@@ -122,7 +145,8 @@ export async function POST(req: NextRequest) {
     INSERT INTO jobs (
       job_number, title, frames, software, blender_file, status,
       manifest, assets_total, assets_uploaded,
-      output_path, status_description, provider, gcs_scene_path
+      output_path, status_description, provider, gcs_scene_path,
+      project_id
     )
     VALUES (
       ${jobNumber},
@@ -137,7 +161,8 @@ export async function POST(req: NextRequest) {
       ${outputPath},
       ${statusDescription},
       ${provider},
-      ${gcsScenePath}
+      ${gcsScenePath},
+      ${projectIdNum}
     )
     RETURNING *
   `

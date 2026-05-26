@@ -77,11 +77,17 @@ export async function initDB() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `
-  // Seed a default project so the UI isn't empty on first run
+  // project_id FK on jobs — added after projects table exists
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL`
+
+  // ── One-time dedup: delete extra rows where multiple rows share the same name,
+  // keeping only the oldest (lowest id).  Safe because project_id on jobs was
+  // NULL before this column was introduced, so no referential integrity to break.
   await sql`
-    INSERT INTO projects (name, is_active)
-    VALUES ('Default', TRUE)
-    ON CONFLICT DO NOTHING
+    DELETE FROM projects
+    WHERE id NOT IN (
+      SELECT MIN(id) FROM projects GROUP BY name
+    )
   `
 
   // ── Tasks — one row per frame; records per-frame timing from the worker ───────

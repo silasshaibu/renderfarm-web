@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
       p.created_at,
       COUNT(j.id) AS job_count
     FROM projects p
-    LEFT JOIN jobs j ON j.status IN ('success','downloaded','done')
+    LEFT JOIN jobs j ON j.project_id = p.id
     GROUP BY p.id
     ORDER BY p.created_at ASC
   `

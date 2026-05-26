@@ -465,17 +465,57 @@ function ProjectsTab() {
   const { data: apiProjects, refetch } = useApiFetch(() => projectsApi.list())
   const projects: ApiProject[] = (apiProjects as ApiProject[] | null) ?? []
 
+  const [showForm,    setShowForm]    = useState(false)
+  const [newName,     setNewName]     = useState('')
+  const [creating,    setCreating]    = useState(false)
+  const [formError,   setFormError]   = useState('')
+
   const toggleProject = async (p: ApiProject) => {
     await projectsApi.update(p.id, { isActive: !p.isActive })
     await refetch()
+  }
+
+  const handleCreate = async () => {
+    if (!newName.trim()) { setFormError('Project name is required'); return }
+    setCreating(true); setFormError('')
+    try {
+      await projectsApi.create(newName.trim())
+      setNewName(''); setShowForm(false)
+      await refetch()
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Failed to create project')
+    } finally {
+      setCreating(false)
+    }
   }
 
   return (
     <div className="admin-panel">
       <div className="flex justify-between mb-4">
         <h3 className="text-sm font-semibold text-gray-200">Projects</h3>
-        <BlueBtn label="+ New Project" small />
+        <BlueBtn label="+ New Project" small onClick={() => { setShowForm(v => !v); setFormError('') }} />
       </div>
+
+      {/* Inline create form */}
+      {showForm && (
+        <div className="mb-4 flex items-center gap-3 flex-wrap">
+          <input
+            type="text"
+            placeholder="Project name…"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate() }}
+            className="calc-input px-3 py-1.5 flex-1 min-w-[200px] max-w-xs"
+            autoFocus
+          />
+          <BlueBtn label={creating ? 'Creating…' : 'Create'} onClick={handleCreate} small />
+          <button type="button" className="admin-btn-gray text-xs"
+            onClick={() => { setShowForm(false); setNewName(''); setFormError('') }}>
+            Cancel
+          </button>
+          {formError && <span className="text-xs text-red-400">{formError}</span>}
+        </div>
+      )}
       <div className="overflow-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
