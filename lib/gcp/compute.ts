@@ -31,6 +31,7 @@ mkdir -p ${outputPath}
 # ── 3. Run Blender render ──────────────────────────────────────────────────────
 echo "Rendering job=${jobId} frame=${frameNumber}"
 blender -b /mnt/render/${gcsScenePath} \\
+  --python-expr "import bpy; bpy.context.scene.cycles.use_denoising = False" \\
   -E CYCLES \\
   -o "${outputPath}/${paddedFrame}" \\
   -f ${frameNumber} \\
