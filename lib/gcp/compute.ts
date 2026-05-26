@@ -70,14 +70,14 @@ export async function spawnRenderVM(
       autoDelete: true,
       initializeParams: {
         sourceImage: RENDER_IMAGE,
-        diskSizeGb : '50',
-        diskType   : `zones/${GCP_ZONE}/diskTypes/pd-ssd`,
+        // diskSizeGb must be a string for proto3 int64 serialisation
+        diskSizeGb: String(50),
       },
     }],
 
     networkInterfaces: [{
       network      : 'global/networks/default',
-      accessConfigs: [{ type: 'ONE_TO_ONE_NAT', name: 'External NAT' }],
+      accessConfigs: [{ name: 'External NAT', type: 'ONE_TO_ONE_NAT' }],
     }],
 
     metadata: {
@@ -92,10 +92,11 @@ export async function spawnRenderVM(
       ],
     }],
 
+    // Note: automaticRestart omitted — it's a proto BoolValue wrapper and causes
+    // serialisation issues in the Node.js client; default behaviour is correct.
     scheduling: {
       preemptible      : config.preemptible,
       onHostMaintenance: config.preemptible ? 'TERMINATE' : 'MIGRATE',
-      automaticRestart : !config.preemptible,
     },
 
     labels: {
