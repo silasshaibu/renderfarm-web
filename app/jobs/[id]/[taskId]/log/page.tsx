@@ -243,7 +243,8 @@ export default function TaskLogPage({ params }: PageProps) {
   const authUser   = getUser()
   const manifest   = job.manifest
   const status     = task.status
-  const outputUrl  = task.outputPath
+  // Show user's specified output folder — never expose the internal GCS/cloud URL
+  const displayOutput = job.outputPath || null
   const files      = task.uploadedFiles ?? []
   const executions = task.executions    ?? []
 
@@ -327,13 +328,12 @@ export default function TaskLogPage({ params }: PageProps) {
             <div className="task-command-box">{blenderCmd}</div>
           </div>
 
-          {outputUrl && (
+          {displayOutput && (
             <div className="flex gap-4 flex-wrap items-center">
               <span className="job-detail-meta-label">Output:</span>
-              <a href={outputUrl} target="_blank" rel="noreferrer"
-                className="text-blue-400 hover:underline font-mono text-xs truncate max-w-xs">
-                {outputUrl}
-              </a>
+              <span className="font-mono text-xs text-gray-300 truncate max-w-xs">
+                {displayOutput}
+              </span>
             </div>
           )}
 
