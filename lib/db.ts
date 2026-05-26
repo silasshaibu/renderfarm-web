@@ -202,6 +202,40 @@ export async function initDB() {
   `
   await sql`CREATE INDEX IF NOT EXISTS idx_wrangler_events_ts ON wrangler_events(created_at DESC)`
 
+  // ── Machine types — admin-controlled list shown in the Blender addon dropdown ─
+  await sql`
+    CREATE TABLE IF NOT EXISTS machine_types (
+      id          TEXT PRIMARY KEY,          -- addon identifier e.g. 'a100-80gb-1'
+      label       TEXT NOT NULL,             -- display name e.g. 'A100 80GB · 12 vCPU · 85 GB'
+      instance    TEXT NOT NULL DEFAULT 'GPU', -- 'GPU' | 'CPU'
+      gcp_type    TEXT NOT NULL,             -- real GCP machine type string
+      gpu_memory  TEXT NOT NULL DEFAULT '',  -- e.g. '80GB' — shown in UI
+      vcpu        INTEGER NOT NULL DEFAULT 4,
+      ram_gb      INTEGER NOT NULL DEFAULT 15,
+      enabled     BOOLEAN NOT NULL DEFAULT FALSE,
+      sort_order  INTEGER NOT NULL DEFAULT 99,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+  // Seed the canonical GPU list — insert only if not already present
+  const mtSeed = [
+    { id: 'a100-80gb-1', label: 'A100 80GB · 12 vCPU · 85 GB',  instance: 'GPU', gcp_type: 'a2-ultragpu-1g',  gpu_memory: '80GB', vcpu: 12, ram_gb: 85,  sort_order: 1 },
+    { id: 'a100-40gb-1', label: 'A100 40GB · 12 vCPU · 85 GB',  instance: 'GPU', gcp_type: 'a2-highgpu-1g',   gpu_memory: '40GB', vcpu: 12, ram_gb: 85,  sort_order: 2 },
+    { id: 'l4-1',        label: 'L4 24GB · 8 vCPU · 32 GB',     instance: 'GPU', gcp_type: 'g2-standard-8',   gpu_memory: '24GB', vcpu:  8, ram_gb: 32,  sort_order: 3 },
+    { id: 't4-1',        label: 'T4 16GB · 4 vCPU · 15 GB',     instance: 'GPU', gcp_type: 'n1-standard-4',   gpu_memory: '16GB', vcpu:  4, ram_gb: 15,  sort_order: 4 },
+    { id: 'v100-1',      label: 'V100 16GB · 8 vCPU · 52 GB',   instance: 'GPU', gcp_type: 'n1-standard-8',   gpu_memory: '16GB', vcpu:  8, ram_gb: 52,  sort_order: 5 },
+    { id: 'n1-4',        label: 'CPU · 4 vCPU · 15 GB',         instance: 'CPU', gcp_type: 'n1-standard-4',   gpu_memory: '',     vcpu:  4, ram_gb: 15,  sort_order: 10 },
+    { id: 'n1-8',        label: 'CPU · 8 vCPU · 30 GB',         instance: 'CPU', gcp_type: 'n1-standard-8',   gpu_memory: '',     vcpu:  8, ram_gb: 30,  sort_order: 11 },
+    { id: 'n1-16',       label: 'CPU · 16 vCPU · 60 GB',        instance: 'CPU', gcp_type: 'n1-standard-16',  gpu_memory: '',     vcpu: 16, ram_gb: 60,  sort_order: 12 },
+  ]
+  for (const mt of mtSeed) {
+    await sql`
+      INSERT INTO machine_types (id, label, instance, gcp_type, gpu_memory, vcpu, ram_gb, enabled, sort_order)
+      VALUES (${mt.id}, ${mt.label}, ${mt.instance}, ${mt.gcp_type}, ${mt.gpu_memory}, ${mt.vcpu}, ${mt.ram_gb}, FALSE, ${mt.sort_order})
+      ON CONFLICT (id) DO NOTHING
+    `
+  }
+
   // Seed the default admin user if no users exist yet
   const existing = await sql`SELECT id FROM users LIMIT 1`
   if (existing.length === 0) {

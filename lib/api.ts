@@ -46,6 +46,34 @@ export const auth = {
   me: () => request<{ id: string; name: string; email: string; isAdmin: boolean }>('/auth/me'),
 }
 
+// ── Machine Types ─────────────────────────────────────────────────────────────
+export interface ApiMachineType {
+  id:         string
+  label:      string
+  instance:   string   // 'GPU' | 'CPU'
+  gcp_type:   string
+  gpu_memory: string
+  vcpu:       number
+  ram_gb:     number
+  enabled?:   boolean  // only present in admin ?all=1 response
+  sort_order?: number
+}
+
+export const machineTypes = {
+  /** Public — returns only enabled types (used by addon + submission UI) */
+  list: () => request<ApiMachineType[]>('/machine-types'),
+
+  /** Admin — returns all types including disabled ones */
+  listAll: () => request<ApiMachineType[]>('/machine-types?all=1'),
+
+  /** Admin — toggle enabled or change sort order */
+  update: (id: string, data: { enabled?: boolean; sort_order?: number }) =>
+    request<ApiMachineType>('/machine-types', {
+      method: 'PATCH',
+      body:   JSON.stringify({ id, ...data }),
+    }),
+}
+
 // ── Projects ──────────────────────────────────────────────────────────────────
 export const projects = {
   list: () =>

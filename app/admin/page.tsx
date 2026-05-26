@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { admin as adminApi, projects as projectsApi, payments as paymentsApi } from '@/lib/api'
+import { admin as adminApi, projects as projectsApi, payments as paymentsApi, machineTypes as machineTypesApi, ApiMachineType } from '@/lib/api'
 import { useApiFetch } from '@/hooks/useApiFetch'
 
 const CostLimitChart = dynamic(() => import('@/components/CostLimitChart'), { ssr: false })
@@ -1081,15 +1081,96 @@ function PaymentTab() {
 }
 
 // ---------------------------------------------------------------------------
+// 7. MACHINE TYPES TAB
+// ---------------------------------------------------------------------------
+function MachineTypesTab() {
+  const { data, refetch } = useApiFetch(() => machineTypesApi.listAll())
+  const types: ApiMachineType[] = (data as ApiMachineType[] | null) ?? []
+  const [saving, setSaving] = useState<string | null>(null)
+  const [saved,  setSaved]  = useState(false)
+
+  const toggle = async (mt: ApiMachineType) => {
+    setSaving(mt.id)
+    await machineTypesApi.update(mt.id, { enabled: !mt.enabled }).catch(() => null)
+    await refetch()
+    setSaving(null)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const gpu  = types.filter(t => t.instance === 'GPU')
+  const cpu  = types.filter(t => t.instance === 'CPU')
+
+  const TypeTable = ({ rows, title }: { rows: ApiMachineType[]; title: string }) => (
+    <div className="mb-6">
+      <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{title}</h4>
+      <div className="overflow-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="jobs-thead-row">
+              {['ENABLED', 'MACHINE TYPE', 'GCP TYPE', 'vCPU', 'RAM', 'GPU MEM'].map(h => (
+                <th key={h} className="jobs-th">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(mt => (
+              <tr key={mt.id} className="jobs-tbody-row">
+                <td className="jobs-td text-center">
+                  <button
+                    type="button"
+                    onClick={() => toggle(mt)}
+                    disabled={saving === mt.id}
+                    aria-label={mt.enabled ? 'Disable' : 'Enable'}
+                    className={[
+                      'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none',
+                      mt.enabled ? 'bg-blue-500' : 'bg-gray-600',
+                      saving === mt.id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+                    ].join(' ')}
+                  >
+                    <span className={[
+                      'inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform',
+                      mt.enabled ? 'translate-x-4' : 'translate-x-0.5',
+                    ].join(' ')} />
+                  </button>
+                </td>
+                <td className="jobs-td text-gray-200 font-medium">{mt.label}</td>
+                <td className="jobs-td font-mono text-xs text-gray-400">{mt.gcp_type}</td>
+                <td className="jobs-td text-right text-gray-400">{mt.vcpu}</td>
+                <td className="jobs-td text-right text-gray-400">{mt.ram_gb} GB</td>
+                <td className="jobs-td text-right text-gray-400">{mt.gpu_memory || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="admin-panel">
+      {saved && <SuccessAlert msg="Machine type updated" />}
+      <p className="text-xs text-gray-500 mb-4">
+        Only <span className="text-blue-400">enabled</span> machine types appear in the Blender addon dropdown.
+        Enable a type only after you have the corresponding GCP quota approved.
+      </p>
+      <TypeTable rows={gpu} title="GPU Instances" />
+      <TypeTable rows={cpu} title="CPU Instances" />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Tab config + Page
 // ---------------------------------------------------------------------------
 const TABS = [
-  { id: 'users',    label: 'Users',              Panel: UsersTab    },
-  { id: 'limits',   label: 'Cost Limits',        Panel: CostLimitsTab },
-  { id: 'projects', label: 'Projects',           Panel: ProjectsTab },
-  { id: 'sessions', label: 'Sessions',           Panel: SessionsTab },
-  { id: 'storage',  label: 'Storage',            Panel: StorageTab  },
-  { id: 'payment',  label: 'Payment Information',Panel: PaymentTab  },
+  { id: 'users',        label: 'Users',              Panel: UsersTab        },
+  { id: 'limits',       label: 'Cost Limits',        Panel: CostLimitsTab   },
+  { id: 'projects',     label: 'Projects',           Panel: ProjectsTab     },
+  { id: 'machine-types',label: 'Machine Types',      Panel: MachineTypesTab },
+  { id: 'sessions',     label: 'Sessions',           Panel: SessionsTab     },
+  { id: 'storage',      label: 'Storage',            Panel: StorageTab      },
+  { id: 'payment',      label: 'Payment Information',Panel: PaymentTab      },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 
