@@ -178,10 +178,11 @@ export async function POST(req: NextRequest) {
       const appUrl      = process.env.NEXT_PUBLIC_APP_URL ?? 'https://renderfarm-web.vercel.app'
       const machineType = data.machine_type ?? 'n1-standard-4'
       const preemptible = data.preemptible  ?? true
+      const software    = data.software     ?? 'blender-4-1'
 
       await spawnJobVMs(
         String(job.id), scoutFrames, gcsScenePath,
-        machineType, preemptible, appUrl, INTERNAL_SECRET
+        machineType, preemptible, appUrl, INTERNAL_SECRET, software
       )
 
       await sql`

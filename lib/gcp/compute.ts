@@ -6,6 +6,26 @@ export interface RenderTaskConfig {
   gcsScenePath: string   // e.g. jobs/abc123/scene.blend
   machineType : string   // GCP machine type string — see MACHINE_TYPE_MAP
   preemptible : boolean
+  software    : string   // e.g. 'blender-4-1' — maps to /opt/blender/blender-4-1/blender
+}
+
+/**
+ * Map the addon's software identifier to the versioned Blender binary on the render node image.
+ * Each version is installed at /opt/blender/<id>/blender during image build.
+ * Falls back to /opt/blender/blender-4-1/blender if the version is not found.
+ */
+function blenderBin(software: string): string {
+  const known = [
+    'blender-4-2-lts',
+    'blender-4-1',
+    'blender-4-0',
+    'blender-3-6-lts',
+    'blender-3-5',
+    'blender-3-4',
+    'blender-3-3-lts',
+  ]
+  const id = known.includes(software) ? software : 'blender-4-1'
+  return `/opt/blender/${id}/blender`
 }
 
 /**
@@ -49,9 +69,10 @@ function buildStartupScript(
   internalSecret: string,
   useGpu      : boolean,
 ): string {
-  const { jobId, frameNumber, gcsScenePath } = config
+  const { jobId, frameNumber, gcsScenePath, software } = config
   const outputPath  = `/mnt/render/output/${jobId}`
   const paddedFrame = String(frameNumber).padStart(4, '0')
+  const blender     = blenderBin(software)
 
   // GPU VMs need CUDA initialised before Blender starts.
   // The render-node image must have the NVIDIA driver + CUDA toolkit installed.
@@ -81,8 +102,9 @@ curl -s -X POST ${appUrl}/api/gcp/task-start \\
   -d '{"jobId":"${jobId}","frame":${frameNumber}}'
 
 # ── 4. Run Blender render ──────────────────────────────────────────────────────
-echo "Rendering job=${jobId} frame=${frameNumber} gpu=${useGpu}"
-blender -b /mnt/render/${gcsScenePath} \\
+echo "Rendering job=${jobId} frame=${frameNumber} software=${software} gpu=${useGpu}"
+echo "Using Blender binary: ${blender}"
+${blender} -b /mnt/render/${gcsScenePath} \\
   --python-expr "import bpy; bpy.context.scene.cycles.use_denoising = False" \\
   -E CYCLES \\
   ${cyclesDevice} \\
@@ -196,20 +218,25 @@ export async function spawnRenderVM(
  * Spawn VMs for ALL frames simultaneously.
  */
 export async function spawnJobVMs(
-  jobId       : string,
-  frames      : number[],
-  gcsScenePath: string,
-  machineType : string  = 'n1-standard-4',
-  preemptible : boolean = true,
-  appUrl      : string,
-  internalSecret: string
+  jobId         : string,
+  frames        : number[],
+  gcsScenePath  : string,
+  machineType   : string  = 'n1-standard-4',
+  preemptible   : boolean = true,
+  appUrl        : string,
+  internalSecret: string,
+  software      : string  = 'blender-4-1',
 ): Promise<string[]> {
   const vmNames = await Promise.all(
     frames.map(frame =>
-      spawnRenderVM({ jobId, frameNumber: frame, gcsScenePath, machineType, preemptible }, appUrl, internalSecret)
+      spawnRenderVM(
+        { jobId, frameNumber: frame, gcsScenePath, machineType, preemptible, software },
+        appUrl,
+        internalSecret,
+      )
     )
   )
-  console.log(`Spawned ${vmNames.length} VMs for job ${jobId}`)
+  console.log(`Spawned ${vmNames.length} VMs for job ${jobId} (software=${software})`)
   return vmNames
 }
 
