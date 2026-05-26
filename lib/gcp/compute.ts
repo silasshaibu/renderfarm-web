@@ -28,7 +28,13 @@ echo "GCS bucket mounted"
 # ── 2. Create output directory ─────────────────────────────────────────────────
 mkdir -p ${outputPath}
 
-# ── 3. Run Blender render ──────────────────────────────────────────────────────
+# ── 3. Signal render start (sets started_at for elapsed-time tracking) ────────
+curl -s -X POST ${appUrl}/api/gcp/task-start \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${internalSecret}" \\
+  -d '{"jobId":"${jobId}","frame":${frameNumber}}'
+
+# ── 4. Run Blender render ──────────────────────────────────────────────────────
 echo "Rendering job=${jobId} frame=${frameNumber}"
 blender -b /mnt/render/${gcsScenePath} \\
   --python-expr "import bpy; bpy.context.scene.cycles.use_denoising = False" \\
@@ -38,13 +44,13 @@ blender -b /mnt/render/${gcsScenePath} \\
   -F PNG
 echo "Render complete: frame ${frameNumber}"
 
-# ── 4. Signal completion back to the API ──────────────────────────────────────
+# ── 5. Signal completion back to the API ──────────────────────────────────────
 curl -s -X POST ${appUrl}/api/gcp/task-complete \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${internalSecret}" \\
   -d '{"jobId":"${jobId}","frame":${frameNumber},"status":"complete"}'
 
-# ── 5. Self-delete this VM (billing stops immediately) ────────────────────────
+# ── 6. Self-delete this VM (billing stops immediately) ────────────────────────
 INSTANCE_NAME=$(curl -s "http://metadata.google.internal/computeMetadata/v1/instance/name" -H "Metadata-Flavor: Google")
 ZONE=$(curl -s "http://metadata.google.internal/computeMetadata/v1/instance/zone" -H "Metadata-Flavor: Google" | awk -F/ '{print $NF}')
 gcloud compute instances delete "$INSTANCE_NAME" --zone="$ZONE" --quiet

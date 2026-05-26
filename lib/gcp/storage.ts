@@ -29,7 +29,10 @@ export async function listOutputFiles(jobId: string): Promise<string[]> {
   const [files] = await storageClient.bucket(GCP_BUCKET).getFiles({
     prefix: `output/${jobId}/`,
   })
-  return files.map(f => f.name)
+  // Exclude GCS directory markers (names ending with '/') and anything without an extension
+  return files
+    .map(f => f.name)
+    .filter(name => !name.endsWith('/') && name.includes('.'))
 }
 
 /**
