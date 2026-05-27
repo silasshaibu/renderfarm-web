@@ -14,14 +14,22 @@ function getCredentials() {
   }
 }
 
-// Lazy singleton factory — wraps target in a Proxy so the real client is only
+// Lazy singleton factory — wraps the real client in a Proxy so it is only
 // constructed on the first method/property access, not at import time.
+//
+// IMPORTANT: methods must be returned BOUND to the instance, otherwise `this`
+// inside the GCP client is undefined and calls like `.insert()` throw
+// "Cannot read properties of undefined (reading 'then')".
 function lazyClient<T extends object>(factory: () => T): T {
   let instance: T | undefined
   return new Proxy({} as T, {
     get(_, prop) {
       if (!instance) instance = factory()
-      return (instance as Record<string | symbol, unknown>)[prop]
+      const val = (instance as Record<string | symbol, unknown>)[prop]
+      // Bind functions so `this` inside GCP client methods is correct
+      return typeof val === 'function'
+        ? (val as (...args: unknown[]) => unknown).bind(instance)
+        : val
     },
   })
 }
