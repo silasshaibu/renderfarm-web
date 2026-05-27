@@ -44,6 +44,45 @@ export async function POST(req: NextRequest) {
       { expiresIn: '7d' },
     )
 
+    // Clear invited flag on first login
+    await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS invited BOOLEAN DEFAULT FALSE`.catch(() => null)
+    await sql`UPDATE users SET invited = FALSE WHERE id = ${user.id} AND invited = TRUE`.catch(() => null)
+
+    // Dedup sessions: reuse existing valid session for same user+IP instead of accumulating
+    const existingSess = await sql`
+      SELECT id, jti FROM user_sessions
+      WHERE user_id = ${user.id} AND ip_address = ${ip}
+        AND revoked = FALSE AND expires_at > NOW()
+      ORDER BY expires_at DESC
+      LIMIT 1
+    ` as Record<string, unknown>[]
+
+    if (existingSess.length > 0) {
+      // Extend the existing session rather than creating a new one
+      const ex = existingSess[0]
+      await sql`UPDATE user_sessions SET expires_at = ${expiresAt.toISOString()} WHERE id = ${ex.id}`
+      const reuseToken = jwt.sign(
+        { sub: String(user.id), email: user.email, isAdmin: user.is_admin, jti: ex.jti },
+        JWT_SECRET,
+        { expiresIn: '7d' },
+      )
+      // Check 2FA then return reused token
+      let requires2faSetup2 = false
+      try {
+        const tfaRows = await sql`SELECT value FROM wrangler_settings WHERE key = 'require2fa' LIMIT 1` as Record<string, unknown>[]
+        if (tfaRows.length > 0 && tfaRows[0].value === true) {
+          const secretRow = await sql`SELECT totp_secret FROM users WHERE id = ${user.id}`.catch(() => [])
+          const secret = ((secretRow as Record<string, unknown>[])[0] as Record<string, unknown> | undefined)?.totp_secret
+          if (!secret) requires2faSetup2 = true
+        }
+      } catch { /* ignore */ }
+      return NextResponse.json({
+        access_token: reuseToken,
+        user: { id: String(user.id), email: user.email, isAdmin: user.is_admin },
+        requires2faSetup: requires2faSetup2,
+      })
+    }
+
     // Store session for admin session management (reuse ip from rate-limit check above)
     const userAgent = req.headers.get('user-agent') ?? ''
     await sql`

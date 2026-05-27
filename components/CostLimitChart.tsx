@@ -5,24 +5,25 @@ import {
   Tooltip, ResponsiveContainer,
 } from 'recharts'
 
-function buildTimeData() {
+function buildTimeData(entity?: string) {
   const points = []
   for (let m = 0; m < 24 * 60; m += 30) {
     const h    = Math.floor(m / 60)
     const min  = m % 60
     const ampm = h < 12 ? 'am' : 'pm'
     const h12  = h % 12 === 0 ? 12 : h % 12
+    // Simulate realistic-looking data when an entity is selected
+    const t    = m / (24 * 60)
+    const seed = entity ? entity.charCodeAt(0) / 128 : 0
     points.push({
       time: `${h12}:${String(min).padStart(2, '0')}:00 ${ampm}`,
-      accountSpend: 0,
-      limit:        0,
-      runningCores: 0,
+      accountSpend: entity ? Math.max(0, seed * 0.6 * t + Math.sin(t * Math.PI * 3) * seed * 0.1) : 0,
+      limit:        entity ? seed * 0.8 : 0,
+      runningCores: entity ? Math.max(0, seed * 4 * Math.sin(t * Math.PI * 2)) : 0,
     })
   }
   return points
 }
-
-const TIME_DATA = buildTimeData()
 
 function Legend() {
   return (
@@ -34,14 +35,19 @@ function Legend() {
   )
 }
 
-export default function CostLimitChart() {
+interface Props { selectedEntity?: string }
+
+export default function CostLimitChart({ selectedEntity }: Props) {
+  const data  = buildTimeData(selectedEntity)
+  const title = selectedEntity ? selectedEntity : 'Select a limit to view usage'
+
   return (
     <div>
-      <p className="text-center text-sm font-medium text-white mb-1">Select a limit to view usage</p>
+      <p className="text-center text-sm font-medium text-white mb-1">{title}</p>
       <Legend />
       <div className="cost-limit-chart-wrap">
         <ResponsiveContainer width="100%" height={340}>
-          <LineChart data={TIME_DATA} margin={{ top: 8, right: 55, left: 10, bottom: 24 }}>
+          <LineChart data={data} margin={{ top: 8, right: 55, left: 10, bottom: 24 }}>
             <CartesianGrid strokeDasharray="4 4" stroke="rgba(255,255,255,0.08)" vertical={false} />
 
             <XAxis
@@ -72,9 +78,9 @@ export default function CostLimitChart() {
             <YAxis
               yAxisId="cores"
               orientation="right"
-              domain={[0, 1.0]}
-              ticks={[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]}
-              tickFormatter={(v: number) => v.toFixed(1)}
+              domain={[0, 5]}
+              ticks={[0, 1, 2, 3, 4, 5]}
+              tickFormatter={(v: number) => v.toFixed(0)}
               tick={{ fill: '#6b7280', fontSize: 10 }}
               tickLine={false}
               axisLine={false}

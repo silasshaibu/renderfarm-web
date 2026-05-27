@@ -236,14 +236,26 @@ export const payments = {
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
+export interface AdminUser {
+  id: string; name: string; email: string
+  isAdmin: boolean; isActive: boolean
+  status: 'active' | 'inactive' | 'pending'
+}
+
 export const admin = {
   users: (filter?: string, status?: string) =>
-    request<{ id: string; name: string; email: string; isAdmin: boolean; isActive: boolean }[]>(
+    request<AdminUser[]>(
       `/admin/users${filter || status ? `?${new URLSearchParams({ ...(filter ? { filter } : {}), ...(status ? { status } : {}) })}` : ''}`
     ),
 
+  inviteUser: (email: string, isAdmin: boolean) =>
+    request<AdminUser>('/admin/users', { method: 'POST', body: JSON.stringify({ email, is_admin: isAdmin }) }),
+
   updateUser: (id: string, data: { isActive?: boolean; isAdmin?: boolean }) =>
     request(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  deleteUser: (id: string) =>
+    request(`/admin/users/${id}`, { method: 'DELETE' }),
 
   limits: () => request('/admin/limits'),
 
@@ -261,5 +273,17 @@ export const admin = {
   terminateSession: (id: string) =>
     request(`/admin/sessions/${id}`, { method: 'DELETE' }),
 
-  storage: () => request('/admin/storage/summary'),
+  storage: () => request<{ fileCount: number; totalBytes: number; totalGb: number; totalMb: number }>('/admin/storage/summary'),
+
+  purgeStorage: () => request('/admin/storage/purge', { method: 'POST' }),
+
+  purgeStatus: () => request<{ inProgress: boolean; initiatedAt: string | null }>('/admin/storage/purge'),
+}
+
+// ── Billing Prepay ────────────────────────────────────────────────────────────
+export const billing = {
+  prepay: (amount: number) =>
+    request<{ ok: boolean; amount: number; bonus: number; total: number }>('/billing/prepay', {
+      method: 'POST', body: JSON.stringify({ amount }),
+    }),
 }
