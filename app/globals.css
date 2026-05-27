@@ -2316,6 +2316,58 @@ select.cost-limit-field {
   border-color: #ef444455;
   color: #ef4444;
 }
+/* ── Task right-click context menu ──────────────────────────────────────── */
+.task-ctx-menu {
+  position:         fixed;
+  top:              var(--ctx-top, 0);
+  left:             var(--ctx-left, 0);
+  z-index:          9999;
+  min-width:        148px;
+  background:       #1a1d23;
+  border:           1px solid rgba(255,255,255,0.1);
+  border-radius:    8px;
+  box-shadow:       0 8px 32px rgba(0,0,0,0.5);
+  padding:          4px;
+  overflow:         hidden;
+}
+.task-ctx-header {
+  padding:          6px 10px 4px;
+  font-size:        10px;
+  font-weight:      600;
+  letter-spacing:   0.06em;
+  text-transform:   uppercase;
+  color:            #6b7280;
+  border-bottom:    1px solid rgba(255,255,255,0.06);
+  margin-bottom:    3px;
+}
+.task-ctx-item {
+  display:          flex;
+  align-items:      center;
+  gap:              8px;
+  width:            100%;
+  padding:          7px 10px;
+  border:           none;
+  background:       transparent;
+  color:            #d1d5db;
+  font-size:        13px;
+  text-align:       left;
+  cursor:           pointer;
+  border-radius:    5px;
+  transition:       background 0.12s, color 0.12s;
+}
+.task-ctx-item:hover {
+  background:       rgba(255,255,255,0.07);
+  color:            #f9fafb;
+}
+.task-ctx-item--danger { color: #f87171; }
+.task-ctx-item--danger:hover { background: rgba(239,68,68,0.12); color: #fca5a5; }
+.task-ctx-icon {
+  width:            16px;
+  text-align:       center;
+  font-size:        12px;
+  opacity:          0.7;
+}
+
 /* ── Per-task retry button ───────────────────────────────────────────────── */
 .task-retry-btn {
   display:         inline-flex;

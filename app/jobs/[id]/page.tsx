@@ -232,6 +232,9 @@ export default function JobDetailPage({ params }: PageProps) {
   const [retryingTasks, setRetryingTasks] = useState<Set<number>>(new Set())
   const [taskErrors,    setTaskErrors]    = useState<Record<number, string>>({})
   const [taskPage,      setTaskPage]      = useState(1)
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number; y: number; idx: number; frameNum: number; status: TaskStatus
+  } | null>(null)
   const [selTask,       setSelTask]       = useState<number | null>(null)
   const [showScout,     setShowScout]     = useState(false)
   const [scoutCreated,  setScoutCreated]  = useState('')
@@ -269,6 +272,16 @@ export default function JobDetailPage({ params }: PageProps) {
     const timer = setInterval(() => { if (!cancelled) load(true) }, 5000)
     return () => { cancelled = true; clearInterval(timer) }
   }, [load])
+
+  // Dismiss context menu on any click or Escape
+  useEffect(() => {
+    if (!ctxMenu) return
+    const dismiss = () => setCtxMenu(null)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCtxMenu(null) }
+    window.addEventListener('click', dismiss)
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('click', dismiss); window.removeEventListener('keydown', onKey) }
+  }, [ctxMenu])
 
   const handleAction = async (action: string) => {
     if (!job || acting) return
@@ -347,6 +360,37 @@ export default function JobDetailPage({ params }: PageProps) {
       setTaskErrors(prev => ({ ...prev, [frameIdx]: e instanceof Error ? e.message : 'Network error' }))
     } finally {
       setRetryingTasks(prev => { const n = new Set(prev); n.delete(frameIdx); return n })
+    }
+  }
+
+  const handleTaskAction = async (action: string, idx: number) => {
+    if (!job) return
+    setCtxMenu(null)
+    const token  = getToken() ?? ''
+    const taskId = String(idx).padStart(3, '0')
+    const base   = `/api/jobs/${job.jobNumber}/tasks/${taskId}`
+
+    setTaskErrors(prev => { const n = { ...prev }; delete n[idx]; return n })
+    setRetryingTasks(prev => new Set(prev).add(idx))
+
+    try {
+      let res: Response
+      if (action === 'retry' || action === 'unhold') {
+        res = await fetch(`${base}/retry`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+      } else if (action === 'hold') {
+        res = await fetch(`${base}/hold`,  { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+      } else if (action === 'kill') {
+        res = await fetch(`${base}/kill`,  { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+      } else {
+        return
+      }
+      const json = await res.json() as { message?: string }
+      if (!res.ok) setTaskErrors(prev => ({ ...prev, [idx]: json.message ?? `${action} failed` }))
+      else await load(true)
+    } catch (e) {
+      setTaskErrors(prev => ({ ...prev, [idx]: e instanceof Error ? e.message : 'Network error' }))
+    } finally {
+      setRetryingTasks(prev => { const n = new Set(prev); n.delete(idx); return n })
     }
   }
 
@@ -632,7 +676,11 @@ export default function JobDetailPage({ params }: PageProps) {
                 return (
                   <tr key={idx}
                     className={`job-task-row${isSelected ? ' job-task-row--selected' : ''}`}
-                    onClick={() => setSelTask(isSelected ? null : idx)}>
+                    onClick={() => setSelTask(isSelected ? null : idx)}
+                    onContextMenu={e => {
+                      e.preventDefault()
+                      setCtxMenu({ x: e.clientX, y: e.clientY, idx, frameNum, status: tStatus })
+                    }}>
 
                     <td className="job-task-td">
                       <Link
@@ -659,7 +707,7 @@ export default function JobDetailPage({ params }: PageProps) {
                             type="button"
                             title={taskErrors[idx] ?? 'Retry this frame on a new VM'}
                             disabled={retryingTasks.has(idx)}
-                            onClick={e => { e.stopPropagation(); handleTaskRetry(idx) }}
+                            onClick={e => { e.stopPropagation(); handleTaskAction('retry', idx) }}
                             className="task-retry-btn">
                             {retryingTasks.has(idx) ? (
                               <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24"
@@ -745,6 +793,38 @@ export default function JobDetailPage({ params }: PageProps) {
           onCreated={num => setScoutCreated(num)}
         />
       )}
+
+      {/* ── Task right-click context menu ────────────────────────────────── */}
+      {ctxMenu && (() => {
+        const s = ctxMenu.status
+        const items: { label: string; action: string; icon: string; danger?: boolean }[] = []
+        if (['failed','killed','preempted','holding','pending'].includes(s))
+          items.push({ label: 'Retry',  action: 'retry',  icon: '↺' })
+        if (s === 'holding')
+          items.push({ label: 'Unhold', action: 'unhold', icon: '▶' })
+        if (['pending','running'].includes(s))
+          items.push({ label: 'Hold',   action: 'hold',   icon: '⏸' })
+        if (['pending','running','holding'].includes(s))
+          items.push({ label: 'Kill',   action: 'kill',   icon: '✕', danger: true })
+
+        if (!items.length) return null
+        return (
+          <div
+            className="task-ctx-menu"
+            style={{ '--ctx-top': `${ctxMenu.y}px`, '--ctx-left': `${ctxMenu.x}px` } as React.CSSProperties}
+            onClick={e => e.stopPropagation()}>
+            <div className="task-ctx-header">Frame {ctxMenu.frameNum}</div>
+            {items.map(item => (
+              <button key={item.action} type="button"
+                className={`task-ctx-item${item.danger ? ' task-ctx-item--danger' : ''}`}
+                onClick={() => handleTaskAction(item.action, ctxMenu.idx)}>
+                <span className="task-ctx-icon">{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )
+      })()}
     </div>
   )
 }

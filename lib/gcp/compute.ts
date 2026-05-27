@@ -241,6 +241,21 @@ export async function spawnJobVMs(
 }
 
 /**
+ * Kill the specific VM for a single frame task.
+ * Silently ignores 404 — VM may have already self-deleted after rendering.
+ */
+export async function killTaskVM(jobId: string, frameNumber: number): Promise<void> {
+  const vmName = `render-${jobId.slice(0, 8)}-f${frameNumber}`.toLowerCase()
+  try {
+    await computeClient.delete({ project: GCP_PROJECT, zone: GCP_ZONE, instance: vmName })
+    console.log(`Killed VM: ${vmName}`)
+  } catch (err) {
+    // 404 = VM already gone (self-deleted after render) — not an error
+    console.log(`[killTaskVM] ${vmName} not found or already deleted:`, err)
+  }
+}
+
+/**
  * Kill all VMs for a job (user clicked Kill in dashboard).
  */
 export async function killJobVMs(jobId: string): Promise<void> {
