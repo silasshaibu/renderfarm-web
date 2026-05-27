@@ -381,7 +381,7 @@ export default function UsagePage() {
                       ))}
                     </Pie>
                     <RCTooltip
-                      formatter={(v: number, name: string) => [fmtMoney(v), name]}
+                      formatter={(v: unknown, name: unknown) => [fmtMoney(Number(v)), String(name)]}
                       contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, fontSize: 12 }}
                       labelStyle={{ color: '#9ca3af' }} />
                   </PieChart>
@@ -420,7 +420,7 @@ export default function UsagePage() {
                   tick={{ fill: '#9ca3af', fontSize: 11 }}
                   axisLine={false} tickLine={false} />
                 <RCTooltip
-                  formatter={(v: number) => [fmtMoney(v), 'Spend']}
+                  formatter={(v: unknown) => [fmtMoney(Number(v)), 'Spend']}
                   contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, fontSize: 12 }}
                   labelStyle={{ color: '#9ca3af' }} />
                 <Bar dataKey="spend" name="Spend" radius={[0, 4, 4, 0]}>
@@ -428,7 +428,7 @@ export default function UsagePage() {
                     <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                   ))}
                   <LabelList dataKey="spend" position="right"
-                    formatter={(v: number) => v > 0 ? fmtMoney(v) : ''}
+                    formatter={(v: unknown) => Number(v) > 0 ? fmtMoney(Number(v)) : ''}
                     style={{ fill: '#9ca3af', fontSize: 10 }} />
                 </Bar>
               </BarChart>
@@ -504,7 +504,7 @@ export default function UsagePage() {
               <Legend wrapperStyle={{ color: '#9ca3af', fontSize: 12, paddingTop: 6 }} />
               <Bar yAxisId="spend" dataKey="spend" name="Spend ($)" fill="#3b82f6" radius={[3,3,0,0]}>
                 <LabelList dataKey="spend" position="top"
-                  formatter={(v: number) => v > 0 ? `$${v.toFixed(0)}` : ''}
+                  formatter={(v: unknown) => Number(v) > 0 ? `$${Number(v).toFixed(0)}` : ''}
                   style={{ fill: '#6b7280', fontSize: 9 }} />
               </Bar>
               <Bar yAxisId="jobs" dataKey="jobs" name="Jobs" fill="#f59e0b" radius={[3,3,0,0]} />
