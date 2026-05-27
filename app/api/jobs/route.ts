@@ -169,8 +169,9 @@ export async function POST(req: NextRequest) {
 
   const job = rowToJob(rows[0] as Record<string, unknown>)
 
-  // ── Auto-dispatch GCP VMs if this is a GCP job with a scene file ────────────
-  if (provider === 'gcp' && gcsScenePath) {
+  // ── Auto-dispatch GCP VMs for any job that has a scene file ─────────────────
+  // No "Start Rendering" button needed — submission triggers rendering immediately.
+  if (gcsScenePath) {
     try {
       const frames      = parseFrameRange(data.frames ?? '1-1')
       const appUrl      = process.env.NEXT_PUBLIC_APP_URL ?? 'https://renderfarm-web.vercel.app'

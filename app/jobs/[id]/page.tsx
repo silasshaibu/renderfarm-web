@@ -152,17 +152,23 @@ const STATUS_CFG: Record<string, { globe: string; label: string }> = {
 }
 
 // ── Action buttons per job status ─────────────────────────────────────────────
-const HOLD   = { label: 'Hold',         next: 'holding',  style: 'btn-action--warn'    }
-const UNHOLD = { label: 'Unhold',       next: 'pending',  style: 'btn-action--primary' }
-const KILL   = { label: 'Kill',         next: 'killed',   style: 'btn-action--danger'  }
-const RETRY  = { label: 'Retry',        next: 'pending',  style: 'btn-action--primary' }
-const RSYNC  = { label: 'Retry Sync',   next: 'syncing',  style: 'btn-action--warn'    }
+// 'action' drives handleAction():
+//   'hold'     → PATCH status = 'holding'
+//   'kill'     → POST /api/jobs/[jobNumber]/kill
+//   'unhold'   → POST /api/jobs/[jobNumber]/unhold  (re-dispatches incomplete frames)
+//   'dispatch' → POST /api/gcp/dispatch             (re-dispatches all frames)
+//   'rsync'    → PATCH status = 'syncing'
+type ActionDef = { label: string; action: string; style: string }
 
-const ACTIONS: Record<string, { label: string; next: string; style: string }[]> = {
-  // Legacy
+const HOLD   : ActionDef = { label: 'Hold',       action: 'hold',     style: 'btn-action--warn'    }
+const UNHOLD : ActionDef = { label: 'Unhold',      action: 'unhold',   style: 'btn-action--primary' }
+const KILL   : ActionDef = { label: 'Kill',        action: 'kill',     style: 'btn-action--danger'  }
+const RETRY  : ActionDef = { label: 'Retry',       action: 'dispatch', style: 'btn-action--primary' }
+const RSYNC  : ActionDef = { label: 'Retry Sync',  action: 'rsync',    style: 'btn-action--warn'    }
+
+const ACTIONS: Record<string, ActionDef[]> = {
   queued:         [HOLD, KILL],
   done:           [],
-  // All 12 Conductor statuses — Kill only on active/in-flight states
   upload_pending: [KILL],
   uploading:      [KILL],
   sync_pending:   [KILL],
@@ -171,12 +177,11 @@ const ACTIONS: Record<string, { label: string; next: string; style: string }[]> 
   pending:        [HOLD, KILL],
   holding:        [UNHOLD, KILL],
   running:        [HOLD, KILL],
-  // Terminal states — no Kill (can't kill what's already stopped)
-  success:        [],           // succeeded — nothing to do
-  downloaded:     [],           // fully done — nothing to do
-  failed:         [RETRY],      // failed — try again
-  killed:         [RETRY],      // manually killed — can re-queue if needed
-  preempted:      [RETRY],      // cloud reclaimed it — try again
+  success:        [],
+  downloaded:     [],
+  failed:         [RETRY],
+  killed:         [RETRY],
+  preempted:      [RETRY],
 }
 
 // ── Per-frame task status ─────────────────────────────────────────────────────
@@ -223,9 +228,7 @@ export default function JobDetailPage({ params }: PageProps) {
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState('')
   const [acting,        setActing]        = useState(false)
-  const [dispatching,   setDispatching]   = useState(false)
-  const [dispatchMsg,   setDispatchMsg]   = useState('')
-  const [dispatchErr,   setDispatchErr]   = useState('')
+  const [actionMsg,     setActionMsg]     = useState('')
   const [retryingTasks, setRetryingTasks] = useState<Set<number>>(new Set())
   const [taskErrors,    setTaskErrors]    = useState<Record<number, string>>({})
   const [taskPage,      setTaskPage]      = useState(1)
@@ -267,47 +270,60 @@ export default function JobDetailPage({ params }: PageProps) {
     return () => { cancelled = true; clearInterval(timer) }
   }, [load])
 
-  const handleAction = async (nextStatus: string) => {
+  const handleAction = async (action: string) => {
     if (!job || acting) return
     setActing(true)
+    setActionMsg('')
     try {
       const token = getToken() ?? ''
-      await fetch(`/api/jobs?id=${job.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status: nextStatus }),
-      })
+
+      if (action === 'dispatch') {
+        // Retry: re-dispatch all frames on GCP
+        const machineType = (job.manifest?.machine_type as string | undefined) ?? 'n1-standard-4'
+        const preemptible = (job.manifest?.preemptible as boolean | undefined) ?? true
+        const res = await fetch('/api/gcp/dispatch', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ jobId: job.id, machineType, preemptible }),
+        })
+        const json = await res.json() as { message?: string; vmCount?: number }
+        if (!res.ok) setActionMsg(json.message ?? 'Dispatch failed')
+
+      } else if (action === 'unhold') {
+        // Unhold: dispatch remaining (incomplete) frames
+        const res = await fetch(`/api/jobs/${job.jobNumber}/unhold`, {
+          method:  'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const json = await res.json() as { message?: string }
+        if (!res.ok) setActionMsg(json.message ?? 'Unhold failed')
+
+      } else if (action === 'kill') {
+        // Kill: terminate all VMs + mark killed
+        await fetch(`/api/jobs/${job.jobNumber}/kill`, {
+          method:  'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+
+      } else if (action === 'hold') {
+        // Hold: pause — just update status
+        await fetch(`/api/jobs?id=${job.id}`, {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ status: 'holding' }),
+        })
+
+      } else if (action === 'rsync') {
+        await fetch(`/api/jobs?id=${job.id}`, {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ status: 'syncing' }),
+        })
+      }
+
       await load(true)
     } catch { /* next poll will sync */ }
     finally { setActing(false) }
-  }
-
-  const handleDispatch = async () => {
-    if (!job || dispatching) return
-    setDispatching(true)
-    setDispatchMsg('')
-    setDispatchErr('')
-    try {
-      const token = getToken() ?? ''
-      const machineType = (job.manifest?.machine_type as string | undefined) ?? 'n1-standard-4'
-      const preemptible = (job.manifest?.preemptible as boolean | undefined) ?? true
-      const res = await fetch('/api/gcp/dispatch', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body:    JSON.stringify({ jobId: job.id, machineType, preemptible }),
-      })
-      const json = await res.json() as { message?: string; scoutFrames?: number[]; totalFrames?: number }
-      if (!res.ok) {
-        setDispatchErr(json.message ?? 'Dispatch failed')
-      } else {
-        setDispatchMsg(`Dispatching — scout frame ${json.scoutFrames?.[0] ?? 1} of ${json.totalFrames ?? total} spawned on GCP`)
-        await load(true)
-      }
-    } catch (e) {
-      setDispatchErr(e instanceof Error ? e.message : 'Network error')
-    } finally {
-      setDispatching(false)
-    }
   }
 
   const handleTaskRetry = async (frameIdx: number) => {
@@ -528,55 +544,19 @@ export default function JobDetailPage({ params }: PageProps) {
 
             {/* Action buttons */}
             {actions.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap justify-center mt-2">
-                {actions.map(a => (
-                  <button key={a.next} type="button"
-                    className={`btn-action ${a.style}`}
-                    disabled={acting}
-                    onClick={() => handleAction(a.next)}>
-                    {acting ? '…' : a.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* ── GCP Dispatch button — shown for queued jobs with a scene file ── */}
-            {(job.status === 'queued' || job.status === 'pending') && (
-              <div className="mt-3 flex flex-col items-center gap-1.5 w-full">
-                {job.gcsScenePath ? (
-                  <button
-                    type="button"
-                    disabled={dispatching}
-                    onClick={handleDispatch}
-                    className="btn-action btn-action--primary btn-action--dispatch">
-                    {dispatching ? (
-                      <>
-                        <svg className="animate-spin" width="13" height="13" viewBox="0 0 24 24"
-                          fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-                        </svg>
-                        Dispatching…
-                      </>
-                    ) : (
-                      <>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-                          stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                          <polygon points="5 3 19 12 5 21 5 3"/>
-                        </svg>
-                        Start Rendering
-                      </>
-                    )}
-                  </button>
-                ) : (
-                  <span className="text-xs text-amber-400/80 text-center leading-tight px-2">
-                    No scene file uploaded — submit from the Blender addon to render on GCP
-                  </span>
-                )}
-                {dispatchMsg && (
-                  <span className="text-xs text-teal-400 text-center leading-tight">{dispatchMsg}</span>
-                )}
-                {dispatchErr && (
-                  <span className="text-xs text-red-400 text-center leading-tight">{dispatchErr}</span>
+              <div className="flex flex-col items-center gap-1.5 mt-2">
+                <div className="flex items-center gap-2 flex-wrap justify-center">
+                  {actions.map(a => (
+                    <button key={a.action} type="button"
+                      className={`btn-action ${a.style}`}
+                      disabled={acting}
+                      onClick={() => handleAction(a.action)}>
+                      {acting ? '…' : a.label}
+                    </button>
+                  ))}
+                </div>
+                {actionMsg && (
+                  <span className="text-xs text-red-400 text-center leading-tight">{actionMsg}</span>
                 )}
               </div>
             )}
