@@ -23,5 +23,5 @@ export const storageClient = new Storage({ credentials })
 export const GCP_PROJECT  = process.env.GCP_PROJECT_ID!
 export const GCP_ZONE     = process.env.GCP_ZONE!
 export const GCP_BUCKET   = process.env.GCP_BUCKET_NAME!
-export const RENDER_IMAGE = process.env.GCP_RENDER_IMAGE!
+export const RENDER_IMAGE = process.env.GCP_BUCKET_IMAGE!
 export const INTERNAL_SECRET = process.env.GCP_INTERNAL_SECRET!
