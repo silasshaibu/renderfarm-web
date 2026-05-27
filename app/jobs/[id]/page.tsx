@@ -111,16 +111,20 @@ interface TaskTiming {
   durationSec: number | null
 }
 
+// Conductor format: "0.35 Minutes" / "1.20 Minutes" / "1.50 Hours"
 function fmtDuration(sec: number | null): string {
-  if (sec == null) return '—'
-  if (sec >= 3600) return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`
-  if (sec >= 60)   return `${Math.floor(sec / 60)}m ${sec % 60}s`
-  return `${sec}s`
+  if (sec == null || sec < 0) return '—'
+  if (sec >= 3600) return `${(sec / 3600).toFixed(2)} Hours`
+  return `${(sec / 60).toFixed(2)} Minutes`
 }
 
+// Conductor format: full date + time  e.g. "5/27/2026, 2:44:47 AM"
 function fmtTime(iso: string | null): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return new Date(iso).toLocaleString([], {
+    month: 'numeric', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', second: '2-digit',
+  })
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -194,11 +198,15 @@ function frameStatus(jobStatus: string, frameIdx: number, outputs: string[]): Ta
   return 'pending'
 }
 
+// Map internal "done" → display "success" to match Conductor labels
+const TASK_STATUS_LABEL: Partial<Record<TaskStatus, string>> = { done: 'success' }
+
 function TaskStatusCell({ status }: { status: TaskStatus }) {
+  const label = TASK_STATUS_LABEL[status] ?? status
   return (
     <span className={`task-status task-status--${status}`}>
       <span className="task-status-dot" />
-      {status}
+      {label}
     </span>
   )
 }
@@ -320,11 +328,34 @@ export default function JobDetailPage({ params }: PageProps) {
     + (softwareRaw ? ' Linux' : '')
 
   // ── Loading / error skeleton ────────────────────────────────────────────────
+  const username = authUser?.email?.split('@')[0] ?? 'Administrator'
   const breadcrumb = (
     <nav className="job-detail-breadcrumb" aria-label="Breadcrumb">
-      <Link href="/">Jobs</Link>
-      <span>/</span>
-      <span>Job: {id}</span>
+      {/* Left: path */}
+      <span className="job-detail-breadcrumb-path">
+        <Link href="/">Jobs</Link>
+        <span>/</span>
+        <span>Job: {id}</span>
+      </span>
+      {/* Right: user | project — inline, like Conductor */}
+      <span className="job-detail-breadcrumb-owner">
+        <span className="job-detail-breadcrumb-user">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+          {username}
+        </span>
+        <span className="job-detail-breadcrumb-sep">|</span>
+        <span className="job-detail-breadcrumb-project">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          {job?.manifest?.project as string ?? 'Default'}
+        </span>
+      </span>
     </nav>
   )
 
@@ -356,31 +387,35 @@ export default function JobDetailPage({ params }: PageProps) {
         {/* ── Two-column body ─────────────────────────────────────────────── */}
         <div className="job-detail-cols">
 
-          {/* LEFT — 3 stacked metadata fields (label above value) */}
+          {/* LEFT — metadata fields (only non-empty fields shown) */}
           <div className="job-detail-left">
 
-            {/* Job Title */}
+            {/* Job Title — always shown */}
             <div className="job-detail-field">
-              <span className="job-detail-field-label">Job Title:</span>
+              <span className="job-detail-field-label">Job Title</span>
               <span className="job-detail-field-value">{titleValue || '—'}</span>
             </div>
 
-            {/* Output Path */}
-            <div className="job-detail-field">
-              <span className="job-detail-field-label">Output Path:</span>
-              <span className="job-detail-field-value">{outputPath || '—'}</span>
-            </div>
+            {/* Output Path — only shown when non-empty */}
+            {outputPath && (
+              <div className="job-detail-field">
+                <span className="job-detail-field-label">Output Path</span>
+                <span className="job-detail-field-value">{outputPath}</span>
+              </div>
+            )}
 
-            {/* Status Description */}
-            <div className="job-detail-field">
-              <span className="job-detail-field-label">Status Description:</span>
-              <span className="job-detail-field-value">{statusDesc || ''}</span>
-            </div>
+            {/* Status Description — only shown when non-empty */}
+            {statusDesc && (
+              <div className="job-detail-field">
+                <span className="job-detail-field-label">Status Description</span>
+                <span className="job-detail-field-value">{statusDesc}</span>
+              </div>
+            )}
 
             {/* Holding banner */}
             {job.status === 'holding' && (
-              <div className="holding-banner mt-4">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+              <div className="holding-banner mt-3">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
                   <line x1="12" y1="9" x2="12" y2="13"/>
@@ -396,35 +431,21 @@ export default function JobDetailPage({ params }: PageProps) {
             )}
           </div>
 
-          {/* RIGHT — globe · status · user/project · machine chip · actions */}
+          {/* RIGHT — globe · status (CAPS) · machine chip · spot · actions */}
           <div className="job-detail-right">
 
             {/* Status globe */}
             <div className={`job-status-globe job-status-globe-${cfg.globe}`} aria-hidden="true" />
 
-            {/* Status label */}
+            {/* Status label — uppercase, like Conductor "SUCCESS" */}
             <div className={`job-detail-status-label job-status-label-${job.status}`}>
-              {cfg.label}
-            </div>
-
-            {/* User | Project — Conductor places these below the globe */}
-            <div className="job-detail-right-owner">
-              <span>{authUser?.email?.split('@')[0] ?? 'Administrator'}</span>
-              <span className="job-detail-right-owner-project">
-                {/* project folder icon */}
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                </svg>
-                {projectName}
-              </span>
+              {cfg.label.toUpperCase()}
             </div>
 
             {/* Machine chip + spot badge */}
             <div className="job-machine-row">
               {workerHost ? (
                 <span className="job-instance-chip">
-                  {/* CW / server icon */}
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
                     stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                     <rect x="2" y="2" width="20" height="8" rx="2"/>
@@ -450,7 +471,7 @@ export default function JobDetailPage({ params }: PageProps) {
 
             {/* Action buttons */}
             {actions.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap justify-center mt-3">
+              <div className="flex items-center gap-2 flex-wrap justify-center mt-2">
                 {actions.map(a => (
                   <button key={a.next} type="button"
                     className={`btn-action ${a.style}`}
@@ -546,11 +567,8 @@ export default function JobDetailPage({ params }: PageProps) {
                     <td className="job-task-td"><TaskStatusCell status={tStatus} /></td>
                     <td className="job-task-td right">{taskCores}</td>
                     <td className="job-task-td right">{taskMemoryGB} GB</td>
-                    <td className="job-task-td center">
-                      {isPreemptible
-                        ? <span className="inline-flex items-center justify-center w-5 h-5 rounded text-xs border bg-blue-500/20 border-blue-500/40 text-blue-400">✓</span>
-                        : <span className="inline-flex items-center justify-center w-5 h-5 rounded text-xs border bg-white/5 border-white/10 text-gray-600">—</span>
-                      }
+                    <td className="job-task-td center text-gray-400">
+                      {isPreemptible ? '✓' : '—'}
                     </td>
                     <td className="job-task-td right text-gray-400">{fmtDuration(timing?.durationSec ?? null)}</td>
                     <td className="job-task-td right text-gray-400">{fmtTime(timing?.startedAt ?? null)}</td>

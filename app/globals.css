@@ -1427,19 +1427,47 @@ select.cost-limit-field {
   background: #1e1e1e;
   border: 1px solid rgba(255,255,255,0.07);
   border-radius: 0.75rem;
-  padding: 1.5rem;
+  padding: 1.25rem 1.5rem;   /* tighter vertical padding */
 }
 
+/* Breadcrumb row — path on left, user|project on right (Conductor layout) */
 .job-detail-breadcrumb {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: #6b7280;
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  margin-bottom: 1.25rem;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 .job-detail-breadcrumb a { color: #60a5fa; }
 .job-detail-breadcrumb a:hover { text-decoration: underline; }
+
+/* Left side of breadcrumb — "Jobs / Job: RF-0014" */
+.job-detail-breadcrumb-path {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Right side of breadcrumb — 👤 user | 📁 project */
+.job-detail-breadcrumb-owner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #6b7280;
+  font-size: 0.74rem;
+}
+.job-detail-breadcrumb-sep { opacity: 0.4; }
+.job-detail-breadcrumb-user,
+.job-detail-breadcrumb-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #9ca3af;
+}
+.job-detail-breadcrumb-user svg,
+.job-detail-breadcrumb-project svg { opacity: 0.65; flex-shrink: 0; }
 
 .job-detail-meta-label {
   font-size: 0.8rem;
@@ -1458,10 +1486,10 @@ select.cost-limit-field {
   margin: 1.25rem 0;
 }
 
-/* Status globe badge (large, top-right of detail card — matches Conductor) */
+/* Status globe badge (top-right of detail card — matches Conductor) */
 .job-status-globe {
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 2.25rem;
+  height: 2.25rem;
   border-radius: 50%;
   flex-shrink: 0;
   box-shadow: inset -3px -3px 6px rgba(0,0,0,0.35), 2px 2px 6px rgba(0,0,0,0.3);
@@ -2231,13 +2259,13 @@ select.cost-limit-field {
 .btn-submit-job:hover { background: #0f766e; }
 
 /* ── Job detail — two-column layout ─────────────────────────────────────── */
-/* Two-column grid: metadata left, globe right */
+/* Two-column grid: metadata left, globe+status right — tighter than before */
 .job-detail-cols {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 2rem;
+  gap: 1.25rem;          /* was 2rem — tighter */
   align-items: start;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 @media (max-width: 640px) {
   .job-detail-cols {
@@ -2249,68 +2277,51 @@ select.cost-limit-field {
 .job-detail-left {
   display: flex;
   flex-direction: column;
-  gap: 20px;            /* generous gap between each field block */
+  gap: 12px;            /* was 20px — more compact */
 }
 
-/* Each field: label on its own line, value on next line */
+/* Each field: muted label then normal-weight value on next line */
 .job-detail-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;             /* tighter label→value gap */
 }
 .job-detail-field-label {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #6b7280;        /* muted label, like Conductor */
+  font-size: 0.72rem;   /* smaller muted label */
+  font-weight: 400;     /* not bold — matches Conductor */
+  color: #6b7280;
   text-transform: none;
+  letter-spacing: 0.01em;
 }
 .job-detail-field-value {
-  font-size: 0.875rem;
+  font-size: 0.85rem;   /* slightly smaller value */
   color: #e5e7eb;
   word-break: break-all;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
-/* Right column — globe + status + owner + machine, all centered */
+/* Right column — globe · STATUS (caps) · machine chip · spot, centered */
 .job-detail-right {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  min-width: 160px;
+  gap: 6px;             /* was 8px */
+  min-width: 140px;
 }
 
-/* Status label below globe */
+/* Status label — UPPERCASE like Conductor "SUCCESS" */
 .job-detail-status-label {
-  font-size: 1rem;
+  font-size: 0.85rem;   /* smaller — matches Conductor chip size */
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
-
-/* User / project row below status label (right column) */
-.job-detail-right-owner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  font-size: 0.78rem;
-  color: #9ca3af;
-  text-align: center;
-}
-.job-detail-right-owner-project {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: #6b7280;
-  font-size: 0.74rem;
-}
-.job-detail-right-owner-project svg { opacity: 0.6; flex-shrink: 0; }
 
 /* Machine chip row (worker host + spot badge) */
 .job-machine-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-wrap: wrap;
   justify-content: center;
 }
