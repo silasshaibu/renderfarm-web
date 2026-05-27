@@ -103,6 +103,20 @@ export function supportConfirmEmail(opts: { email: string; subject: string; tick
   `)
 }
 
+export function userInviteEmail(opts: { email: string; invitedBy: string; setPasswordUrl: string }) {
+  return wrap(`
+    <h2>You've been invited to Renderfarm</h2>
+    <p>Hi,</p>
+    <p><strong>${opts.invitedBy}</strong> has invited <strong>${opts.email}</strong> to join the Renderfarm cloud rendering platform.</p>
+    <p>Click the button below to set your password and activate your account:</p>
+    <p><a class="btn" href="${opts.setPasswordUrl}">Set Password &amp; Activate Account</a></p>
+    <p style="font-size:13px;color:#888;">
+      This invitation link expires in <strong>24 hours</strong>.<br>
+      If you weren't expecting this invitation, you can safely ignore this email.
+    </p>
+  `)
+}
+
 export function jobCompleteEmail(opts: { email: string; jobNumber: string; title: string; frameCount: number }) {
   const url = `${baseUrl()}/jobs/${opts.jobNumber}`
   return wrap(`

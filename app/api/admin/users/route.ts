@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
+import { sendEmail, userInviteEmail, baseUrl } from '@/lib/email'
 
 
 
@@ -103,7 +104,41 @@ export async function POST(req: NextRequest) {
     RETURNING id, email, is_admin, is_active, invited
   ` as Record<string, unknown>[]
 
-  const r = rows[0]
+  const r      = rows[0]
+  const userId = Number(r.id)
+
+  // Generate a set-password token valid for 24 hours (reuses password_resets table)
+  await sql`
+    CREATE TABLE IF NOT EXISTS password_resets (
+      token      TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL,
+      email      TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used       BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+  // Invalidate any prior tokens for this user
+  await sql`DELETE FROM password_resets WHERE user_id = ${userId} AND used = FALSE`
+
+  const token     = crypto.randomUUID()
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
+  await sql`
+    INSERT INTO password_resets (token, user_id, email, expires_at)
+    VALUES (${token}, ${userId}, ${email}, ${expiresAt.toISOString()})
+  `
+
+  const setPasswordUrl = `${baseUrl()}/reset-password?token=${encodeURIComponent(token)}`
+  const inviterEmail   = caller.email ?? 'a Renderfarm admin'
+
+  // Fire-and-forget — never block the response on email delivery
+  sendEmail({
+    to:      email,
+    subject: `You've been invited to Renderfarm`,
+    html:    userInviteEmail({ email, invitedBy: inviterEmail, setPasswordUrl }),
+  }).catch(() => null)
+
   return NextResponse.json({
     id:      String(r.id),
     email:   r.email   as string,
