@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 
-// DELETE /api/admin/wipe-jobs — admin only, one-shot cleanup
+const WIPE_KEY = 'rf-wipe-2026-clean'
+
 export async function DELETE(req: NextRequest) {
-  const user = await verifyToken(req)
-  if (!user || !user.isAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
+  const key = req.nextUrl.searchParams.get('key')
+  if (key !== WIPE_KEY) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 
   await initDB()
 
