@@ -100,6 +100,18 @@ export async function GET(req: NextRequest) {
   const totalJobs      = records.length
   const avgCostPerJob  = totalJobs > 0 ? totalCost / totalJobs : 0
 
+  // Count rendered frames (tasks with done/completed status for these jobs)
+  const jobIds = (rows as Record<string, unknown>[]).map(r => Number(r.id))
+  let framesRendered = 0
+  if (jobIds.length > 0) {
+    const frameRows = await sql`
+      SELECT COUNT(*) AS cnt FROM tasks
+      WHERE job_id = ANY(${jobIds}::int[])
+        AND status IN ('done', 'completed', 'success')
+    ` as Record<string, unknown>[]
+    framesRendered = Number(frameRows[0]?.cnt ?? 0)
+  }
+
   return NextResponse.json({
     records,
     summary: {
@@ -107,6 +119,7 @@ export async function GET(req: NextRequest) {
       totalCoreHours: Number(totalCoreHours.toFixed(4)),
       totalJobs,
       avgCostPerJob:  Number(avgCostPerJob.toFixed(4)),
+      framesRendered,
     },
   })
 }

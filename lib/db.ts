@@ -79,6 +79,9 @@ export async function initDB() {
   `
   // project_id FK on jobs — added after projects table exists
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL`
+  // user_id FK on jobs — tracks which user submitted the job
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`
+  await sql`CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id)`
 
   // ── One-time dedup: delete extra rows where multiple rows share the same name,
   // keeping only the oldest (lowest id).  Safe because project_id on jobs was
