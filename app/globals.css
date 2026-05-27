@@ -914,6 +914,57 @@ select.cost-limit-field {
   border: 1px solid rgba(34,197,94,0.25);
 }
 
+/* ── Enterprise page additions ───────────────────────────────────────────── */
+
+/* Section card with relative positioning for the top-right Save button */
+.enterprise-section-card {
+  position: relative;
+}
+
+/* Section heading style — white, semi-bold, 15px */
+.enterprise-section-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+/* Field label inside modals */
+.enterprise-field-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #9ca3af;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.35rem;
+}
+
+/* Title-case table headers (override all-caps jobs-th) */
+.enterprise-th-titlecase {
+  text-transform: none !important;
+  font-weight: 600;
+  font-size: 0.78rem;
+}
+
+/* Instance type badges */
+.enterprise-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+.enterprise-badge--ondemand {
+  color: #60a5fa;
+  background: rgba(59,130,246,0.12);
+  border: 1px solid rgba(59,130,246,0.25);
+}
+.enterprise-badge--spot {
+  color: #fb923c;
+  background: rgba(251,146,60,0.12);
+  border: 1px solid rgba(251,146,60,0.25);
+}
+
 .admin-tabbar {
   display: flex;
   align-items: flex-end;
