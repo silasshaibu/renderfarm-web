@@ -1,7 +1,7 @@
 /**
  * lib/email.ts — Transactional email via Resend REST API
  *
- * Set RESEND_API in Vercel env vars to enable.
+ * Set RESEND_API_KEY in Vercel env vars to enable.
  * If the key is absent, every call is a no-op (logs a warning).
  *
  * RESEND_FROM   — override the From address (default: noreply@renderfarm-web.vercel.app)
@@ -10,7 +10,7 @@
 
 const API_URL = 'https://api.resend.com/emails'
 
-function getKey()  { return process.env.RESEND_API  ?? '' }
+function getKey()  { return process.env.RESEND_API_KEY  ?? '' }
 function getFrom() { return process.env.RESEND_FROM     ?? 'Renderfarm <noreply@renderfarm-web.vercel.app>' }
 export  function baseUrl() { return process.env.NEXT_PUBLIC_BASE_URL ?? 'https://renderfarm-web.vercel.app' }
 
@@ -28,7 +28,7 @@ export interface EmailOptions {
 export async function sendEmail(opts: EmailOptions): Promise<void> {
   const key = getKey()
   if (!key) {
-    console.warn('[email] RESEND_API not set — email skipped:', opts.subject)
+    console.warn('[email] RESEND_API_KEY not set — email skipped:', opts.subject)
     return
   }
 
