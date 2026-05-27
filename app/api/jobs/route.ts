@@ -173,22 +173,21 @@ export async function POST(req: NextRequest) {
   if (provider === 'gcp' && gcsScenePath) {
     try {
       const frames      = parseFrameRange(data.frames ?? '1-1')
-      const scoutFrames = [frames[0]]
-      const heldFrames  = frames.slice(1)
       const appUrl      = process.env.NEXT_PUBLIC_APP_URL ?? 'https://renderfarm-web.vercel.app'
       const machineType = data.machine_type ?? 'n1-standard-4'
       const preemptible = data.preemptible  ?? true
       const software    = data.software     ?? 'blender-4-1'
 
+      // Spawn all frames in parallel immediately — no scout gate
       await spawnJobVMs(
-        String(job.id), scoutFrames, gcsScenePath,
+        String(job.id), frames, gcsScenePath,
         machineType, preemptible, appUrl, INTERNAL_SECRET, software
       )
 
       await sql`
         UPDATE jobs
         SET status      = 'running',
-            held_frames = ${JSON.stringify(heldFrames)}::jsonb,
+            held_frames = '[]'::jsonb,
             updated_at  = NOW()
         WHERE id = ${job.id}
       `

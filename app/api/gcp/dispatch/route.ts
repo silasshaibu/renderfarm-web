@@ -37,29 +37,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: `Could not parse frame range: ${frameSpec}` }, { status: 400 })
   }
 
-  // Scout: spawn first frame immediately, hold the rest
-  const scoutFrames = [frames[0]]
-  const heldFrames  = frames.slice(1)
-
+  // Spawn ALL frames in parallel immediately — no scout gate.
+  // Use the "Scout Frames" button on the job page if you want a preview render first.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://renderfarm-web.vercel.app'
 
   try {
-    await spawnJobVMs(jobId, scoutFrames, gcsScenePath, machineType, preemptible, appUrl, INTERNAL_SECRET)
+    const vmNames = await spawnJobVMs(jobId, frames, gcsScenePath, machineType, preemptible, appUrl, INTERNAL_SECRET)
 
-    // Store held frames + update status
     await sql`
       UPDATE jobs
-      SET status       = 'running',
-          held_frames  = ${JSON.stringify(heldFrames)}::jsonb,
-          updated_at   = NOW()
+      SET status      = 'running',
+          held_frames = '[]'::jsonb,
+          updated_at  = NOW()
       WHERE id = ${jobId}
     `
 
     return NextResponse.json({
-      ok:           true,
-      scoutFrames,
-      heldFrames,
-      totalFrames:  frames.length,
+      ok:          true,
+      scoutFrames: [frames[0]],
+      totalFrames: frames.length,
+      vmCount:     vmNames.length,
     })
   } catch (err) {
     console.error('[gcp/dispatch]', err)
