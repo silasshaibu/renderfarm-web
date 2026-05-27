@@ -222,11 +222,14 @@ export default function JobDetailPage({ params }: PageProps) {
   const [taskTimings, setTaskTimings] = useState<Record<number, TaskTiming>>({})
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState('')
-  const [acting,      setActing]      = useState(false)
-  const [taskPage,    setTaskPage]    = useState(1)
-  const [selTask,     setSelTask]     = useState<number | null>(null)
-  const [showScout,   setShowScout]   = useState(false)
-  const [scoutCreated, setScoutCreated] = useState('')
+  const [acting,        setActing]        = useState(false)
+  const [dispatching,   setDispatching]   = useState(false)
+  const [dispatchMsg,   setDispatchMsg]   = useState('')
+  const [dispatchErr,   setDispatchErr]   = useState('')
+  const [taskPage,      setTaskPage]      = useState(1)
+  const [selTask,       setSelTask]       = useState<number | null>(null)
+  const [showScout,     setShowScout]     = useState(false)
+  const [scoutCreated,  setScoutCreated]  = useState('')
 
   const loadTimings = useCallback(async (jobId: string) => {
     try {
@@ -275,6 +278,34 @@ export default function JobDetailPage({ params }: PageProps) {
       await load(true)
     } catch { /* next poll will sync */ }
     finally { setActing(false) }
+  }
+
+  const handleDispatch = async () => {
+    if (!job || dispatching) return
+    setDispatching(true)
+    setDispatchMsg('')
+    setDispatchErr('')
+    try {
+      const token = getToken() ?? ''
+      const machineType = (job.manifest?.machine_type as string | undefined) ?? 'n1-standard-4'
+      const preemptible = (job.manifest?.preemptible as boolean | undefined) ?? true
+      const res = await fetch('/api/gcp/dispatch', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ jobId: job.id, machineType, preemptible }),
+      })
+      const json = await res.json() as { message?: string; scoutFrames?: number[]; totalFrames?: number }
+      if (!res.ok) {
+        setDispatchErr(json.message ?? 'Dispatch failed')
+      } else {
+        setDispatchMsg(`Dispatching — scout frame ${json.scoutFrames?.[0] ?? 1} of ${json.totalFrames ?? total} spawned on GCP`)
+        await load(true)
+      }
+    } catch (e) {
+      setDispatchErr(e instanceof Error ? e.message : 'Network error')
+    } finally {
+      setDispatching(false)
+    }
   }
 
   // ── Derived values ──────────────────────────────────────────────────────────
@@ -480,6 +511,47 @@ export default function JobDetailPage({ params }: PageProps) {
                     {acting ? '…' : a.label}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {/* ── GCP Dispatch button — shown for queued jobs with a scene file ── */}
+            {(job.status === 'queued' || job.status === 'pending') && (
+              <div className="mt-3 flex flex-col items-center gap-1.5 w-full">
+                {job.gcsScenePath ? (
+                  <button
+                    type="button"
+                    disabled={dispatching}
+                    onClick={handleDispatch}
+                    className="btn-action btn-action--primary btn-action--dispatch">
+                    {dispatching ? (
+                      <>
+                        <svg className="animate-spin" width="13" height="13" viewBox="0 0 24 24"
+                          fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                        </svg>
+                        Dispatching…
+                      </>
+                    ) : (
+                      <>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                          <polygon points="5 3 19 12 5 21 5 3"/>
+                        </svg>
+                        Start Rendering
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <span className="text-xs text-amber-400/80 text-center leading-tight px-2">
+                    No scene file uploaded — submit from the Blender addon to render on GCP
+                  </span>
+                )}
+                {dispatchMsg && (
+                  <span className="text-xs text-teal-400 text-center leading-tight">{dispatchMsg}</span>
+                )}
+                {dispatchErr && (
+                  <span className="text-xs text-red-400 text-center leading-tight">{dispatchErr}</span>
+                )}
               </div>
             )}
           </div>

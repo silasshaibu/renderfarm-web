@@ -2316,6 +2316,14 @@ select.cost-limit-field {
   border-color: #ef444455;
   color: #ef4444;
 }
+.btn-action--dispatch {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  gap:             6px;
+  max-width:       180px;
+  width:           100%;
+}
 
 /* ── Holding banner ──────────────────────────────────────────────────────── */
 .holding-banner {
