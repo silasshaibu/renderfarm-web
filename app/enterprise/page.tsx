@@ -273,9 +273,9 @@ function ShotGridTab() {
   )
 
   const configs: ShotGridConfig[] = (sgData as ShotGridConfig[] | null) ?? []
-  const projects: string[] = ((projData as { name: string }[] | null) ?? [])
-    .filter((p: { isActive?: boolean }) => p.isActive !== false)
-    .map((p: { name: string }) => p.name)
+  const projects: string[] = ((projData as { name: string; isActive?: boolean }[] | null) ?? [])
+    .filter((p) => p.isActive !== false)
+    .map((p) => p.name)
 
   const [showModal,    setShowModal]    = useState(false)
   const [editTarget,   setEditTarget]   = useState<ShotGridConfig | null>(null)

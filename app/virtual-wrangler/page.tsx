@@ -2,9 +2,30 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 
-// ---------------------------------------------------------------------------
-// Toggle switch
-// ---------------------------------------------------------------------------
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+function tok() {
+  return typeof window !== 'undefined' ? (localStorage.getItem('rf_token') ?? '') : ''
+}
+
+async function apiFetch<T>(url: string, opts: RequestInit = {}): Promise<T> {
+  const res = await fetch(url, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok()}`, ...(opts.headers ?? {}) },
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json() as Promise<T>
+}
+
+function fmtDate(iso: string) {
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC',
+  }).format(new Date(iso))
+}
+
+// ─── shared UI ───────────────────────────────────────────────────────────────
+
 function Toggle({ checked, onChange, id }: { checked: boolean; onChange: () => void; id: string }) {
   return (
     <label htmlFor={id} className="relative inline-flex items-center cursor-pointer gap-2">
@@ -18,29 +39,6 @@ function Toggle({ checked, onChange, id }: { checked: boolean; onChange: () => v
   )
 }
 
-// ---------------------------------------------------------------------------
-// Wrangler card
-// ---------------------------------------------------------------------------
-function WranglerCard({ title, enabled, onToggle, toggleId, badge, children }: {
-  title: string; enabled: boolean; onToggle: () => void
-  toggleId: string; badge?: React.ReactNode; children: React.ReactNode
-}) {
-  return (
-    <div className="wrangler-card">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-gray-200">{title}</h3>
-          {badge}
-        </div>
-        <Toggle id={toggleId} checked={enabled} onChange={onToggle} />
-      </div>
-      <div className={`flex flex-col gap-4 ${!enabled ? 'opacity-50 pointer-events-none' : ''}`}>
-        {children}
-      </div>
-    </div>
-  )
-}
-
 function FieldRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
@@ -51,192 +49,73 @@ function FieldRow({ label, hint, children }: { label: string; hint?: string; chi
   )
 }
 
-function InlineInput({ id, value, onChange, unit, type = 'number' }: {
-  id: string; value: string; onChange: (v: string) => void; unit: string; type?: string
+function NumInput({ id, value, onChange, min = 1 }: {
+  id: string; value: number; onChange: (v: number) => void; min?: number
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <input id={id} type={type} value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="calc-input px-3 py-1.5 w-24 text-right" />
-      <span className="text-xs text-gray-500">{unit}</span>
+    <input id={id} type="number" min={min} value={value}
+      onChange={e => onChange(Math.max(min, Number(e.target.value) || min))}
+      className="calc-input px-3 py-1.5 w-28 text-right" />
+  )
+}
+
+function SavedBanner() {
+  return (
+    <div className="enterprise-alert-success text-sm">✓ Settings saved</div>
+  )
+}
+
+function ConfirmModal({ message, onConfirm, onCancel, busy }: {
+  message: string; onConfirm: () => void; onCancel: () => void; busy: boolean
+}) {
+  return (
+    <div className="enterprise-modal-overlay" onClick={onCancel}>
+      <div className="admin-confirm-card" onClick={e => e.stopPropagation()}>
+        <p className="text-sm text-gray-300 mb-5">{message}</p>
+        <div className="admin-confirm-actions">
+          <button type="button" className="admin-btn-ghost px-4 py-2 text-sm" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="admin-confirm-remove-btn px-4 py-2 text-sm"
+            disabled={busy} onClick={onConfirm}>
+            {busy ? 'Clearing…' : 'Clear Log'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Settings Tab
-// ---------------------------------------------------------------------------
-function SettingsTab() {
-  // Max Frame/Task Runtime
-  const [maxRuntimeOn,  setMaxRuntimeOn]  = useState(true)
-  const [maxRuntime,    setMaxRuntime]     = useState('1')
-  const [runtimeAction, setRuntimeAction] = useState('Kill')
+// ─── WranglerCard ─────────────────────────────────────────────────────────────
 
-  // Resource Exhaustion – Spot to On-Demand
-  const [spotOn,  setSpotOn]  = useState(false)   // shows "Unavailable"
-
-  // Resource Exhaustion – Zone Relocation
-  const [zoneOn,        setZoneOn]        = useState(true)
-  const [maxWait,       setMaxWait]       = useState('90')
-  const [priorityLevel, setPriorityLevel] = useState('5')
-
-  // Outlier Frames
-  const [outlierOn,   setOutlierOn]   = useState(true)
-  const [checkFreq,   setCheckFreq]   = useState('5')
-
-  const [saved,  setSaved]  = useState(false)
-  const [saving, setSaving] = useState(false)
-
-  // Load settings from API on mount
-  const load = useCallback(async () => {
-    try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
-      const res   = await fetch('/api/wrangler-settings', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) return
-      const s = await res.json() as Record<string, unknown>
-      if (s.maxRuntimeOn  !== undefined) setMaxRuntimeOn(Boolean(s.maxRuntimeOn))
-      if (s.maxRuntime    !== undefined) setMaxRuntime(String(s.maxRuntime))
-      if (s.runtimeAction !== undefined) setRuntimeAction(String(s.runtimeAction))
-      if (s.spotOn        !== undefined) setSpotOn(Boolean(s.spotOn))
-      if (s.zoneOn        !== undefined) setZoneOn(Boolean(s.zoneOn))
-      if (s.maxWait       !== undefined) setMaxWait(String(s.maxWait))
-      if (s.priorityLevel !== undefined) setPriorityLevel(String(s.priorityLevel))
-      if (s.outlierOn     !== undefined) setOutlierOn(Boolean(s.outlierOn))
-      if (s.checkFreq     !== undefined) setCheckFreq(String(s.checkFreq))
-    } catch { /* ignore — settings are optional */ }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
-      await fetch('/api/wrangler-settings', {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          maxRuntimeOn, maxRuntime, runtimeAction,
-          spotOn, zoneOn, maxWait, priorityLevel,
-          outlierOn, checkFreq,
-        }),
-      })
-      setSaved(true); setTimeout(() => setSaved(false), 2500)
-    } catch { /* ignore */ }
-    finally { setSaving(false) }
-  }
-
-  const UnavailableBadge = (
-    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold wrangler-unavailable-badge">
-      Unavailable
-    </span>
-  )
-
+function WranglerCard({ title, description, enabled, onToggle, toggleId, saving, saved, onSave, children }: {
+  title: string; description: string; enabled: boolean; onToggle: () => void
+  toggleId: string; saving: boolean; saved: boolean; onSave: () => void
+  children: React.ReactNode
+}) {
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-gray-400">
-        Virtual Wranglers allow you to set parameters to oversee and manage the function of your jobs
-        on Conductor. These settings are for the entire account and will affect{' '}
-        <span className="text-gray-200 font-medium">all</span> jobs run in the account.
-      </p>
-
-      {saved && (
-        <div className="enterprise-alert-success">
-          ✓ Virtual Wrangler settings saved
-        </div>
-      )}
-
-      {/* Max Frame/Task Runtime */}
-      <WranglerCard title="Max Frame/Task Runtime" enabled={maxRuntimeOn}
-        onToggle={() => setMaxRuntimeOn((v) => !v)} toggleId="max-runtime-toggle">
-        <p className="text-xs text-gray-500">
-          The &quot;Max Frame/Task Runtime&quot; virtual wrangler will retry or automatically kill any
-          tasks that run longer than your set maximum runtime.
-        </p>
-        <FieldRow label="Max Runtime" hint="Set how long a task can run before an action is taken. The minimum wait time is 1 hour.">
-          <InlineInput id="max-runtime" value={maxRuntime} onChange={setMaxRuntime} unit="hours" />
-        </FieldRow>
-        <FieldRow label="Runtime Exceeded Action" hint="Select the action to take when the runtime is exceeded.">
-          <select id="runtime-action" title="Runtime exceeded action" value={runtimeAction}
-            onChange={(e) => setRuntimeAction(e.target.value)}
-            className="calc-input px-3 py-1.5 w-40">
-            <option value="Kill">Kill</option>
-            <option value="Retry">Retry</option>
-            <option value="Notify">Notify</option>
-          </select>
-        </FieldRow>
-      </WranglerCard>
-
-      {/* Resource Exhaustion Avoidance */}
-      <div className="wrangler-card">
-        <h3 className="text-sm font-semibold text-gray-200 mb-2">Resource Exhaustion Avoidance</h3>
-        <p className="text-xs text-gray-500 mb-4">
-          Occasionally resource zones will run out of capacity before a job is fully provisioned.
-          &quot;Spot to On-Demand&quot; and &quot;Zone Relocation&quot; are two wranglers that let you define
-          what actions to take to avoid your job being delayed due to resource exhaustion.
-        </p>
-
-        {/* Spot to On-Demand sub-card */}
-        <div className="wrangler-sub-card mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-gray-300">Spot to On-Demand</p>
-              {UnavailableBadge}
-            </div>
-            <Toggle id="spot-toggle" checked={spotOn} onChange={() => setSpotOn((v) => !v)} />
-          </div>
-          <p className="text-xs text-gray-500">
-            If cheaper pre-emptible (spot) instances aren&apos;t immediately available, tasks can
-            take longer to get resources and transition from PENDING to RUNNING. The &quot;Spot to
-            On-Demand&quot; virtual wrangler will automatically switch your high-priority jobs to
-            standard instances to get quicker resource placement.{' '}
-            <span className="text-gray-300 font-medium">Current cloud provider does not support this wrangler.</span>
-          </p>
-        </div>
-
-        {/* Zone Relocation sub-card */}
-        <div className="wrangler-sub-card">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-semibold text-gray-300">Zone Relocation</p>
-            <Toggle id="zone-toggle" checked={zoneOn} onChange={() => setZoneOn((v) => !v)} />
-          </div>
-          <p className="text-xs text-gray-500 mb-4">
-            The &quot;Zone Relocation&quot; virtual wrangler automatically moves your job to a
-            different resource zone if it has been waiting longer than a set time for
-            resources to become available.
-          </p>
-          <div className={`flex flex-col gap-4 ${!zoneOn ? 'opacity-50 pointer-events-none' : ''}`}>
-            <FieldRow label="Max Wait Time" hint="Set how long to wait before moving your job. The minimum wait time is 90 minutes.">
-              <InlineInput id="max-wait" value={maxWait} onChange={setMaxWait} unit="minutes" />
-            </FieldRow>
-            <FieldRow label="Priority Level" hint="All jobs at or above the set priority level will be managed by this wrangler.">
-              <InlineInput id="priority-level" value={priorityLevel} onChange={setPriorityLevel} unit="" />
-            </FieldRow>
-          </div>
-        </div>
+    <div className="wrangler-card flex flex-col gap-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-200">{title}</h3>
+        <Toggle id={toggleId} checked={enabled} onChange={onToggle} />
       </div>
 
-      {/* Outlier Frames */}
-      <WranglerCard title="Outlier Frames" enabled={outlierOn}
-        onToggle={() => setOutlierOn((v) => !v)} toggleId="outlier-toggle">
-        <p className="text-xs text-gray-500">
-          The &quot;Outlier&quot; virtual wrangler will help you identify tasks that aren&apos;t behaving as
-          expected by emailing the user who submitted the job of any frames that are taking
-          longer than other tasks in the job. Only jobs that contain 3 or more tasks will be
-          analyzed.
-        </p>
-        <FieldRow label="Check Frequency" hint="Set how often running jobs will be checked for outliers, with a max frequency of 5 minutes.">
-          <InlineInput id="check-freq" value={checkFreq} onChange={setCheckFreq} unit="minutes" />
-        </FieldRow>
-      </WranglerCard>
+      {/* Description */}
+      <p className="text-xs text-gray-500">{description}</p>
 
-      {/* Save button row */}
+      {/* Saved banner */}
+      {saved && <SavedBanner />}
+
+      {/* Config fields — dimmed when disabled */}
+      <div className={`flex flex-col gap-4 ${!enabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        {children}
+      </div>
+
+      {/* Save */}
       <div className="flex justify-end pt-2 wrangler-save-row">
-        <button type="button" className="admin-btn-primary px-6 py-2 text-sm"
-          disabled={saving} onClick={handleSave}>
+        <button type="button" className="admin-btn-primary px-5 py-1.5 text-sm"
+          disabled={saving} onClick={onSave}>
           {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
@@ -244,127 +123,381 @@ function SettingsTab() {
   )
 }
 
-// ---------------------------------------------------------------------------
-// History Tab — live data from /api/wrangler-events
-// ---------------------------------------------------------------------------
+// ─── Max Frame/Task Runtime ───────────────────────────────────────────────────
+
+function MaxRuntimeCard({ init }: { init: Record<string, unknown> }) {
+  const [enabled, setEnabled]  = useState(Boolean(init.enabled) ?? true)
+  const [maxHours, setMaxHours] = useState(Number(init.max_hours ?? 1))
+  const [action,  setAction]   = useState(String(init.action ?? 'kill'))
+  const [saving,  setSaving]   = useState(false)
+  const [saved,   setSaved]    = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await apiFetch('/api/virtual-wrangler/max-runtime', {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled, max_hours: maxHours, action }),
+      })
+      setSaved(true); setTimeout(() => setSaved(false), 3000)
+    } catch { /* ignore */ }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <WranglerCard
+      title="Max Frame/Task Runtime"
+      description='The "Max Frame/Task Runtime" virtual wrangler will retry or automatically kill any tasks that run longer than your set maximum runtime.'
+      enabled={enabled} onToggle={() => setEnabled(v => !v)} toggleId="max-runtime-toggle"
+      saving={saving} saved={saved} onSave={save}>
+
+      <FieldRow label="Max Runtime" hint="Set how long a task can run before an action is taken. Minimum 1 hour.">
+        <div className="flex items-center gap-2">
+          <NumInput id="max-hours" value={maxHours} onChange={setMaxHours} min={1} />
+          <span className="text-xs text-gray-500">hours</span>
+        </div>
+      </FieldRow>
+
+      <FieldRow label="Runtime Exceeded Action" hint="Select the action to take when the runtime is exceeded.">
+        <select id="runtime-action" title="Runtime exceeded action" value={action}
+          onChange={e => setAction(e.target.value)}
+          className="calc-input px-3 py-1.5 w-40">
+          <option value="kill">Kill</option>
+          <option value="retry">Retry</option>
+          <option value="notify">Notify</option>
+        </select>
+      </FieldRow>
+    </WranglerCard>
+  )
+}
+
+// ─── Zone Relocation ──────────────────────────────────────────────────────────
+
+function RelocationCard({ init }: { init: Record<string, unknown> }) {
+  const [enabled,   setEnabled]   = useState(Boolean(init.enabled) ?? true)
+  const [maxWait,   setMaxWait]   = useState(Number(init.max_wait_minutes ?? 90))
+  const [priority,  setPriority]  = useState(Number(init.priority_threshold ?? 5))
+  const [saving,    setSaving]    = useState(false)
+  const [saved,     setSaved]     = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await apiFetch('/api/virtual-wrangler/relocation', {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled, max_wait_minutes: maxWait, priority_threshold: priority }),
+      })
+      setSaved(true); setTimeout(() => setSaved(false), 3000)
+    } catch { /* ignore */ }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <WranglerCard
+      title="Zone Relocation"
+      description='The "Zone Relocation" virtual wrangler automatically moves your job to a different resource zone if it has been waiting longer than a set time for resources to become available.'
+      enabled={enabled} onToggle={() => setEnabled(v => !v)} toggleId="relocation-toggle"
+      saving={saving} saved={saved} onSave={save}>
+
+      <FieldRow label="Max Wait Time" hint="Set how long to wait before moving your job. Minimum 90 minutes.">
+        <div className="flex items-center gap-2">
+          <NumInput id="max-wait" value={maxWait} onChange={setMaxWait} min={90} />
+          <span className="text-xs text-gray-500">minutes</span>
+        </div>
+      </FieldRow>
+
+      <FieldRow label="Priority Threshold" hint="All jobs at or above the set priority level will be managed by this wrangler.">
+        <div className="flex items-center gap-2">
+          <NumInput id="reloc-priority" value={priority} onChange={setPriority} min={1} />
+          <span className="text-xs text-gray-500">and above</span>
+        </div>
+      </FieldRow>
+    </WranglerCard>
+  )
+}
+
+// ─── Spot to On-Demand ────────────────────────────────────────────────────────
+
+function SpotToOnDemandCard({ init }: { init: Record<string, unknown> }) {
+  const [enabled,  setEnabled]  = useState(Boolean(init.enabled) ?? false)
+  const [waitMin,  setWaitMin]  = useState(Number(init.wait_minutes ?? 30))
+  const [priority, setPriority] = useState(Number(init.priority_threshold ?? 7))
+  const [saving,   setSaving]   = useState(false)
+  const [saved,    setSaved]    = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await apiFetch('/api/virtual-wrangler/spot-to-ondemand', {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled, wait_minutes: waitMin, priority_threshold: priority }),
+      })
+      setSaved(true); setTimeout(() => setSaved(false), 3000)
+    } catch { /* ignore */ }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <WranglerCard
+      title="Spot to On-Demand"
+      description={"If cheaper pre-emptible (spot) instances aren't immediately available, tasks can take longer to get resources. The \"Spot to On-Demand\" wrangler automatically switches high-priority jobs to standard instances for quicker placement."}
+      enabled={enabled} onToggle={() => setEnabled(v => !v)} toggleId="spot-toggle"
+      saving={saving} saved={saved} onSave={save}>
+
+      <FieldRow label="Wait Time" hint="How long to wait for a spot instance before switching to on-demand.">
+        <div className="flex items-center gap-2">
+          <NumInput id="spot-wait" value={waitMin} onChange={setWaitMin} min={1} />
+          <span className="text-xs text-gray-500">minutes</span>
+        </div>
+      </FieldRow>
+
+      <FieldRow label="Priority Threshold" hint="Only jobs at or above this priority level will be switched to on-demand.">
+        <div className="flex items-center gap-2">
+          <NumInput id="spot-priority" value={priority} onChange={setPriority} min={1} />
+          <span className="text-xs text-gray-500">and above</span>
+        </div>
+      </FieldRow>
+    </WranglerCard>
+  )
+}
+
+// ─── Syncer ───────────────────────────────────────────────────────────────────
+
+function SyncerCard({ init }: { init: Record<string, unknown> }) {
+  const [enabled, setEnabled]   = useState(Boolean(init.enabled) ?? false)
+  const [retries, setRetries]   = useState(Number(init.max_retries ?? 3))
+  const [timeout, setTimeout_]  = useState(Number(init.timeout_minutes ?? 60))
+  const [action,  setAction]    = useState(String(init.action ?? 'retry'))
+  const [saving,  setSaving]    = useState(false)
+  const [saved,   setSaved]     = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await apiFetch('/api/virtual-wrangler/syncer', {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled, max_retries: retries, timeout_minutes: timeout, action }),
+      })
+      setSaved(true); setTimeout(() => setSaved(false), 3000)
+    } catch { /* ignore */ }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <WranglerCard
+      title="Syncer"
+      description='The "Syncer" wrangler manages file synchronization failures. When a sync operation fails it can retry, fail the task, or send an alert and retry based on your configured policy.'
+      enabled={enabled} onToggle={() => setEnabled(v => !v)} toggleId="syncer-toggle"
+      saving={saving} saved={saved} onSave={save}>
+
+      <FieldRow label="Max Retries" hint="Maximum number of times to retry a failed sync before taking the fallback action.">
+        <div className="flex items-center gap-2">
+          <NumInput id="syncer-retries" value={retries} onChange={setRetries} min={1} />
+          <span className="text-xs text-gray-500">retries</span>
+        </div>
+      </FieldRow>
+
+      <FieldRow label="Sync Timeout" hint="How long to wait for a sync operation before marking it as failed.">
+        <div className="flex items-center gap-2">
+          <NumInput id="syncer-timeout" value={timeout} onChange={setTimeout_} min={1} />
+          <span className="text-xs text-gray-500">minutes</span>
+        </div>
+      </FieldRow>
+
+      <FieldRow label="On Failure Action" hint="What to do when the sync fails and all retries are exhausted.">
+        <select id="syncer-action" title="Sync failure action" value={action}
+          onChange={e => setAction(e.target.value)}
+          className="calc-input px-3 py-1.5 w-44">
+          <option value="retry">Retry</option>
+          <option value="fail">Fail Task</option>
+          <option value="alert_retry">Alert + Retry</option>
+        </select>
+      </FieldRow>
+    </WranglerCard>
+  )
+}
+
+// ─── Activity Log ─────────────────────────────────────────────────────────────
+
 interface WranglerEvent {
-  id:        string
-  ts:        string
-  wrangler:  string
-  jobNumber: string
-  action:    string
-  detail:    string
+  id: string; ts: string; wrangler: string; jobNumber: string; action: string; detail: string
 }
 
-function fmt(iso: string) {
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-    timeZone: 'UTC',
-  }).format(new Date(iso))
-}
-
-function HistoryTab() {
-  const [events,  setEvents]  = useState<WranglerEvent[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState('')
+function ActivityLog() {
+  const [events,       setEvents]      = useState<WranglerEvent[]>([])
+  const [loading,      setLoading]     = useState(true)
+  const [error,        setError]       = useState('')
+  const [showConfirm,  setShowConfirm] = useState(false)
+  const [clearing,     setClearing]    = useState(false)
+  const [lastRefresh,  setLastRefresh] = useState<Date | null>(null)
   const mountedRef = useRef(true)
+
+  const fetchLog = useCallback(async () => {
+    try {
+      const data = await apiFetch<WranglerEvent[]>('/api/virtual-wrangler/activity-log')
+      if (mountedRef.current) {
+        setEvents(Array.isArray(data) ? data : [])
+        setError('')
+        setLastRefresh(new Date())
+      }
+    } catch (e: unknown) {
+      if (mountedRef.current) setError(e instanceof Error ? e.message : 'Failed to load')
+    } finally {
+      if (mountedRef.current) setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     mountedRef.current = true
-    const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+    fetchLog()
+    const id = setInterval(fetchLog, 30_000)
+    return () => { mountedRef.current = false; clearInterval(id) }
+  }, [fetchLog])
 
-    fetch('/api/wrangler-events', { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
-      .then((data: WranglerEvent[]) => {
-        if (mountedRef.current) { setEvents(Array.isArray(data) ? data : []); setLoading(false) }
-      })
-      .catch((e: unknown) => {
-        if (mountedRef.current) {
-          setError(e instanceof Error ? e.message : 'Failed to load events')
-          setLoading(false)
-        }
-      })
-
-    return () => { mountedRef.current = false }
-  }, [])
-
-  if (loading) return <p className="px-4 py-10 text-center text-gray-600 text-sm">Loading…</p>
-  if (error)   return <p className="px-4 py-10 text-center text-red-500 text-sm">{error}</p>
+  const clearLog = async () => {
+    setClearing(true)
+    try {
+      await apiFetch('/api/virtual-wrangler/activity-log', { method: 'DELETE' })
+      setEvents([])
+      setShowConfirm(false)
+    } catch { /* ignore */ }
+    finally { setClearing(false) }
+  }
 
   return (
-    <div className="overflow-auto">
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr className="jobs-thead-row">
-            {['TIMESTAMP','WRANGLER','JOB ID','ACTION','DETAIL'].map((h) => (
-              <th key={h} className="jobs-th">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {events.length === 0 ? (
-            <tr>
-              <td colSpan={5} className="px-4 py-10 text-center text-gray-600 text-sm">
-                No wrangler events yet. Events appear here when the worker enforces runtime limits or handles GPU holds.
-              </td>
-            </tr>
-          ) : (
-            events.map((e) => (
-              <tr key={e.id} className="jobs-tbody-row">
-                <td className="jobs-td font-mono text-xs text-gray-500">{fmt(e.ts)}</td>
-                <td className="jobs-td text-gray-300">{e.wrangler}</td>
-                <td className="jobs-td">
-                  <a href={`/jobs/${e.jobNumber}`} className="font-mono text-blue-400 hover:underline">
-                    {e.jobNumber}
-                  </a>
-                </td>
-                <td className="jobs-td">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-400/10 text-yellow-400 border border-yellow-400/25">
-                    {e.action}
-                  </span>
-                </td>
-                <td className="jobs-td text-xs text-gray-500">{e.detail}</td>
-              </tr>
-            ))
+    <div className="wrangler-card">
+      {/* Section header */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-200">Activity Log</h3>
+          {lastRefresh && (
+            <p className="text-xs text-gray-600 mt-0.5">
+              Last refreshed {lastRefresh.toLocaleTimeString()} · auto-refresh every 30s
+            </p>
           )}
-        </tbody>
-      </table>
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={fetchLog}
+            className="admin-btn-ghost px-3 py-1.5 text-xs">
+            ↺ Refresh
+          </button>
+          <button type="button" onClick={() => setShowConfirm(true)}
+            className="admin-confirm-remove-btn px-3 py-1.5 text-xs">
+            Clear Log
+          </button>
+        </div>
+      </div>
+
+      {/* Confirm modal */}
+      {showConfirm && (
+        <ConfirmModal
+          message="Clear all wrangler activity events? This cannot be undone."
+          onConfirm={clearLog}
+          onCancel={() => setShowConfirm(false)}
+          busy={clearing}
+        />
+      )}
+
+      {/* Table */}
+      {loading ? (
+        <p className="py-8 text-center text-gray-600 text-sm">Loading…</p>
+      ) : error ? (
+        <p className="py-8 text-center text-red-500 text-sm">{error}</p>
+      ) : (
+        <div className="overflow-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="jobs-thead-row">
+                {['TIMESTAMP', 'WRANGLER', 'JOB ID', 'ACTION', 'DETAILS'].map(h => (
+                  <th key={h} className="jobs-th">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {events.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-gray-600 text-sm">
+                    No wrangler events yet. Events appear here when a wrangler takes action on your jobs.
+                  </td>
+                </tr>
+              ) : events.map(e => (
+                <tr key={e.id} className="jobs-tbody-row">
+                  <td className="jobs-td font-mono text-xs text-gray-500 whitespace-nowrap">{fmtDate(e.ts)}</td>
+                  <td className="jobs-td text-gray-300 whitespace-nowrap">{e.wrangler}</td>
+                  <td className="jobs-td">
+                    <a href={`/jobs/${e.jobNumber}`} className="font-mono text-blue-400 hover:underline text-xs">
+                      {e.jobNumber}
+                    </a>
+                  </td>
+                  <td className="jobs-td">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-400/10 text-yellow-400 border border-yellow-400/25">
+                      {e.action}
+                    </span>
+                  </td>
+                  <td className="jobs-td text-xs text-gray-500">{e.detail}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
-const TABS = [
-  { id: 'settings', label: 'Settings', panel: <SettingsTab /> },
-  { id: 'history',  label: 'History',  panel: <HistoryTab />  },
-] as const
-type TabId = (typeof TABS)[number]['id']
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+interface AllSettings {
+  max_runtime?:      Record<string, unknown>
+  relocation?:       Record<string, unknown>
+  spot_to_ondemand?: Record<string, unknown>
+  syncer?:           Record<string, unknown>
+}
 
 export default function VirtualWranglerPage() {
-  const [active, setActive] = useState<TabId>('settings')
-  const currentPanel = TABS.find((t) => t.id === active)?.panel
+  const [settings, setSettings] = useState<AllSettings | null>(null)
+  const [loadErr,  setLoadErr]  = useState('')
+
+  useEffect(() => {
+    apiFetch<AllSettings>('/api/virtual-wrangler/settings')
+      .then(s => setSettings(s))
+      .catch(() => setLoadErr('Failed to load wrangler settings.'))
+  }, [])
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
+    <div className="flex flex-col gap-6 max-w-3xl">
+      {/* Page title */}
+      <div className="flex items-center gap-3">
         <h1 className="text-2xl font-semibold text-white tracking-tight">Virtual Wrangler</h1>
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-yellow-400/15 text-yellow-300 border border-yellow-400/30">
+          BETA
+        </span>
       </div>
-      <div className="admin-tabbar">
-        {TABS.map((tab) => (
-          <button key={tab.id} type="button"
-            onClick={() => setActive(tab.id)}
-            className={['admin-tab', active === tab.id ? 'admin-tab--active' : ''].join(' ')}>
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      {currentPanel}
+
+      {/* Intro */}
+      <p className="text-sm text-gray-400">
+        Virtual Wranglers allow you to set parameters to oversee and manage the function of your jobs
+        on the render farm. These settings affect{' '}
+        <span className="text-gray-200 font-medium">all</span> jobs run in the account and run
+        automatically every 5 minutes via a scheduled background worker.
+      </p>
+
+      {loadErr && (
+        <div className="enterprise-alert-error">{loadErr}</div>
+      )}
+
+      {/* 4 wrangler cards — render once settings are loaded */}
+      {settings && (
+        <>
+          <MaxRuntimeCard    init={settings.max_runtime      ?? {}} />
+          <RelocationCard    init={settings.relocation       ?? {}} />
+          <SpotToOnDemandCard init={settings.spot_to_ondemand ?? {}} />
+          <SyncerCard        init={settings.syncer           ?? {}} />
+        </>
+      )}
+
+      {/* Activity Log — always visible */}
+      <ActivityLog />
     </div>
   )
 }
