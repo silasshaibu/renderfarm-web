@@ -1362,6 +1362,121 @@ ${rows.map(t => `<tr>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Support Tickets tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AdminTicket {
+  id: number; ticketNumber: string; email: string; subject: string
+  category: string; priority: string; status: string; jobId: string
+  createdAt: string; updatedAt: string
+}
+
+interface AdminStats { open: number; highCritical: number; avgResponseHours: number | null; resolvedThisWeek: number }
+
+function TicketPriBadge({ p }: { p: string }) {
+  const cls: Record<string, string> = { critical: 'ticket-badge-critical', high: 'ticket-badge-high', medium: 'ticket-badge-medium', low: 'ticket-badge-low' }
+  return <span className={`ticket-badge ${cls[p.toLowerCase()] ?? 'ticket-badge-low'}`}>{p}</span>
+}
+function TicketStatusBadge({ s }: { s: string }) {
+  const cls: Record<string, string> = { open: 'ticket-status-open', in_progress: 'ticket-status-inprogress', waiting_on_user: 'ticket-status-waiting', resolved: 'ticket-status-resolved', closed: 'ticket-status-closed' }
+  const lbl: Record<string, string> = { open: 'Open', in_progress: 'In Progress', waiting_on_user: 'Waiting', resolved: 'Resolved', closed: 'Closed' }
+  return <span className={`ticket-badge ${cls[s] ?? 'ticket-status-closed'}`}>{lbl[s] ?? s}</span>
+}
+
+function relTime(iso: string) {
+  const d = (Date.now() - new Date(iso).getTime()) / 1000
+  if (d < 60) return 'just now'
+  if (d < 3600) return `${Math.floor(d / 60)}m ago`
+  if (d < 86400) return `${Math.floor(d / 3600)}h ago`
+  return `${Math.floor(d / 86400)}d ago`
+}
+
+function SupportTab() {
+  const { data: raw, loading } = useApiFetch<{ stats: AdminStats; tickets: AdminTicket[] }>(
+    () => fetch('/api/admin/support', { headers: { Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''}` } }).then(r => r.json())
+  )
+  const [search, setSearch] = useState('')
+  const [filterStatus, setFilterStatus] = useState('all')
+
+  const stats   = raw?.stats
+  const tickets = (raw?.tickets ?? []).filter(t => {
+    const matchS = filterStatus === 'all' || t.status === filterStatus
+    const q = search.toLowerCase()
+    const matchQ = !q || t.subject.toLowerCase().includes(q) || t.email.toLowerCase().includes(q) || t.ticketNumber.toLowerCase().includes(q)
+    return matchS && matchQ
+  })
+
+  const statCards = [
+    { label: 'Open Tickets',       value: stats?.open            ?? '—', color: 'text-blue-400'   },
+    { label: 'High / Critical',    value: stats?.highCritical    ?? '—', color: 'text-red-400'    },
+    { label: 'Avg Response (hrs)', value: stats?.avgResponseHours != null ? `${stats.avgResponseHours}h` : '—', color: 'text-amber-400' },
+    { label: 'Resolved This Week', value: stats?.resolvedThisWeek ?? '—', color: 'text-green-400'  },
+  ]
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-3">
+        {statCards.map(c => (
+          <div key={c.label} className="bg-white/[0.03] border border-white/8 rounded-lg p-4 flex flex-col gap-1">
+            <p className={`text-2xl font-bold ${c.color}`}>{loading ? '—' : String(c.value)}</p>
+            <p className="text-xs text-gray-500">{c.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-3">
+        <input type="search" placeholder="Search tickets…" value={search} onChange={e => setSearch(e.target.value)}
+          className="calc-input px-3 py-1.5 text-sm w-56" />
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="calc-input px-3 py-1.5 text-sm">
+          <option value="all">All Statuses</option>
+          <option value="open">Open</option>
+          <option value="in_progress">In Progress</option>
+          <option value="waiting_on_user">Waiting on User</option>
+          <option value="resolved">Resolved</option>
+          <option value="closed">Closed</option>
+        </select>
+        <span className="text-xs text-gray-600">{tickets.length} ticket{tickets.length !== 1 ? 's' : ''}</span>
+      </div>
+
+      {/* Table */}
+      {loading ? (
+        <p className="py-8 text-center text-gray-600 text-sm">Loading…</p>
+      ) : tickets.length === 0 ? (
+        <p className="py-8 text-center text-gray-600 text-sm">No tickets found.</p>
+      ) : (
+        <div className="overflow-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="jobs-thead-row">
+                {['Ticket #', 'User', 'Subject', 'Category', 'Priority', 'Status', 'Created', 'Updated'].map(h => (
+                  <th key={h} className="jobs-th">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tickets.map(t => (
+                <tr key={t.id} className="jobs-tbody-row cursor-pointer" onClick={() => window.open(`/support/tickets/${t.id}`, '_blank')}>
+                  <td className="jobs-td font-mono text-xs text-blue-400">{t.ticketNumber}</td>
+                  <td className="jobs-td text-xs text-gray-400 max-w-28 truncate">{t.email}</td>
+                  <td className="jobs-td text-gray-300 max-w-48 truncate">{t.subject}</td>
+                  <td className="jobs-td text-xs text-gray-500">{t.category}</td>
+                  <td className="jobs-td"><TicketPriBadge p={t.priority} /></td>
+                  <td className="jobs-td"><TicketStatusBadge s={t.status} /></td>
+                  <td className="jobs-td text-xs text-gray-500">{relTime(t.createdAt)}</td>
+                  <td className="jobs-td text-xs text-gray-500">{t.updatedAt ? relTime(t.updatedAt) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tab config + Page
 // ─────────────────────────────────────────────────────────────────────────────
 const TABS = [
@@ -1371,6 +1486,7 @@ const TABS = [
   { id: 'sessions', label: 'Sessions',            Panel: SessionsTab   },
   { id: 'storage',  label: 'Storage',             Panel: StorageTab    },
   { id: 'payment',  label: 'Payment Information', Panel: PaymentTab    },
+  { id: 'support',  label: 'Support Tickets',     Panel: SupportTab    },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 

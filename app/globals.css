@@ -2943,3 +2943,134 @@ select.cost-limit-field {
   color: #60a5fa;
   border-left-color: #3b82f6;
 }
+
+/* ── Support page (dark theme) ───────────────────────────────────────────── */
+
+.ticket-section-card {
+  background: #1e1e1e;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 0.625rem;
+  padding: 1.5rem;
+}
+
+/* Description / reply textarea min-height */
+.ticket-description-area { min-height: 120px; }
+
+/* Priority badges */
+.ticket-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+}
+.ticket-badge-critical { background: rgba(239,68,68,0.15);  color: #f87171; border: 1px solid rgba(248,113,113,0.3); }
+.ticket-badge-high     { background: rgba(249,115,22,0.15); color: #fb923c; border: 1px solid rgba(251,146,60,0.3); }
+.ticket-badge-medium   { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(96,165,250,0.3); }
+.ticket-badge-low      { background: rgba(107,114,128,0.15);color: #9ca3af; border: 1px solid rgba(156,163,175,0.3); }
+
+/* Status badges */
+.ticket-status-open        { background: rgba(59,130,246,0.12);  color: #60a5fa; border: 1px solid rgba(96,165,250,0.25); }
+.ticket-status-inprogress  { background: rgba(245,158,11,0.12);  color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
+.ticket-status-waiting     { background: rgba(139,92,246,0.12);  color: #a78bfa; border: 1px solid rgba(167,139,250,0.25); }
+.ticket-status-resolved    { background: rgba(34,197,94,0.12);   color: #4ade80; border: 1px solid rgba(74,222,128,0.25); }
+.ticket-status-closed      { background: rgba(107,114,128,0.12); color: #9ca3af; border: 1px solid rgba(156,163,175,0.2); }
+
+/* Toast notification */
+.ticket-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 9999;
+  max-width: 400px;
+  padding: 0.75rem 1.125rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  animation: ticket-toast-in 0.2s ease;
+}
+.ticket-toast--ok  { background: #14532d; color: #86efac; border: 1px solid #166534; }
+.ticket-toast--err { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+@keyframes ticket-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* File drop zone */
+.ticket-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 1.125rem;
+  background: rgba(255,255,255,0.02);
+  border: 1px dashed rgba(255,255,255,0.12);
+  border-radius: 0.5rem;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: center;
+}
+.ticket-dropzone:hover {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.2);
+}
+
+/* Common Issues accordion */
+.ticket-accordion-item {
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+.ticket-accordion-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: rgba(255,255,255,0.02);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.ticket-accordion-trigger:hover { background: rgba(255,255,255,0.05); }
+.ticket-accordion-chevron {
+  font-size: 1rem;
+  color: #6b7280;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.ticket-accordion-body {
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* Thread message bubbles */
+.thread-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.thread-avatar--user    { background: rgba(99,102,241,0.2);  color: #818cf8; border: 1px solid rgba(99,102,241,0.3); }
+.thread-avatar--support { background: rgba(20,184,166,0.2);  color: #2dd4bf; border: 1px solid rgba(20,184,166,0.3); }
+
+.thread-bubble {
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.thread-bubble--user     { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: #d1d5db; }
+.thread-bubble--support  { background: rgba(20,184,166,0.06);  border: 1px solid rgba(20,184,166,0.2);  color: #d1d5db; }
+.thread-bubble--internal { background: rgba(245,158,11,0.06);  border: 1px solid rgba(245,158,11,0.2);  color: #d1d5db; }

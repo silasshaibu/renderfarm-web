@@ -117,6 +117,95 @@ export function userInviteEmail(opts: { email: string; invitedBy: string; setPas
   `)
 }
 
+// ── Support ticket emails ──────────────────────────────────────────────────────
+
+const SLA: Record<string, string> = {
+  critical: '2 hours',
+  high:     '4 hours',
+  medium:   '1 business day',
+  low:      '2 business days',
+}
+
+export function ticketConfirmEmail(opts: {
+  email: string; ticketNumber: string; subject: string; priority: string
+}) {
+  const sla = SLA[opts.priority.toLowerCase()] ?? '1–2 business days'
+  const url = `${baseUrl()}/support`
+  return wrap(`
+    <h2>Support Ticket Received</h2>
+    <p>Hi,</p>
+    <p>We've received your support ticket <strong>${opts.ticketNumber}</strong>:</p>
+    <p style="background:#f8f8f8;border-left:3px solid #0d9488;padding:10px 14px;border-radius:3px;font-style:italic;">
+      ${opts.subject}
+    </p>
+    <p>We'll respond to <strong>${opts.email}</strong> within <strong>${sla}</strong>.</p>
+    <p><a class="btn" href="${url}">View My Tickets</a></p>
+    <p style="font-size:13px;color:#888;">
+      You can view your ticket history and add replies at any time by logging into your dashboard.
+    </p>
+  `)
+}
+
+export function ticketNotifyAdminEmail(opts: {
+  adminEmail: string; ticketNumber: string; subject: string
+  priority: string; category: string; description: string
+  userEmail: string; jobId?: string
+}) {
+  const url = `${baseUrl()}/admin?tab=support`
+  return wrap(`
+    <h2>[${opts.priority.toUpperCase()}] New Support Ticket: ${opts.subject}</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr><td style="padding:4px 8px;color:#888;width:130px;">Ticket #</td><td style="padding:4px 8px;font-weight:600;">${opts.ticketNumber}</td></tr>
+      <tr><td style="padding:4px 8px;color:#888;">From</td><td style="padding:4px 8px;">${opts.userEmail}</td></tr>
+      <tr><td style="padding:4px 8px;color:#888;">Category</td><td style="padding:4px 8px;">${opts.category}</td></tr>
+      <tr><td style="padding:4px 8px;color:#888;">Priority</td><td style="padding:4px 8px;">${opts.priority}</td></tr>
+      ${opts.jobId ? `<tr><td style="padding:4px 8px;color:#888;">Job ID</td><td style="padding:4px 8px;font-family:monospace;">${opts.jobId}</td></tr>` : ''}
+    </table>
+    <p style="margin-top:16px;font-weight:600;">Description:</p>
+    <p style="background:#f8f8f8;border-left:3px solid #e53e3e;padding:10px 14px;border-radius:3px;white-space:pre-wrap;">${opts.description}</p>
+    <p><a class="btn" href="${url}">View in Admin Panel</a></p>
+  `)
+}
+
+export function ticketReplyToUserEmail(opts: {
+  email: string; ticketNumber: string; subject: string; replyText: string
+}) {
+  const url = `${baseUrl()}/support`
+  return wrap(`
+    <h2>Reply to your ticket ${opts.ticketNumber}</h2>
+    <p>The support team has replied to your ticket: <strong>${opts.subject}</strong></p>
+    <p style="background:#f0f9ff;border-left:3px solid #0d9488;padding:10px 14px;border-radius:3px;white-space:pre-wrap;">${opts.replyText}</p>
+    <p><a class="btn" href="${url}">View Ticket & Reply</a></p>
+  `)
+}
+
+export function ticketReplyToAdminEmail(opts: {
+  adminEmail: string; ticketNumber: string; subject: string
+  replyText: string; userEmail: string
+}) {
+  const url = `${baseUrl()}/admin?tab=support`
+  return wrap(`
+    <h2>User replied to ticket ${opts.ticketNumber}</h2>
+    <p>From: <strong>${opts.userEmail}</strong></p>
+    <p>Ticket: <strong>${opts.subject}</strong></p>
+    <p style="background:#f8f8f8;border-left:3px solid #6366f1;padding:10px 14px;border-radius:3px;white-space:pre-wrap;">${opts.replyText}</p>
+    <p><a class="btn" href="${url}">View in Admin Panel</a></p>
+  `)
+}
+
+export function ticketResolvedEmail(opts: {
+  email: string; ticketNumber: string; subject: string
+}) {
+  const url = `${baseUrl()}/support`
+  return wrap(`
+    <h2>Your ticket has been resolved</h2>
+    <p>We've marked your ticket <strong>${opts.ticketNumber}</strong> as resolved:</p>
+    <p style="background:#f8f8f8;border-left:3px solid #48bb78;padding:10px 14px;border-radius:3px;font-style:italic;">${opts.subject}</p>
+    <p>Was your issue resolved? If not, you can re-open your ticket from the dashboard at any time.</p>
+    <p><a class="btn" href="${url}">View My Tickets</a></p>
+  `)
+}
+
 export function jobCompleteEmail(opts: { email: string; jobNumber: string; title: string; frameCount: number }) {
   const url = `${baseUrl()}/jobs/${opts.jobNumber}`
   return wrap(`

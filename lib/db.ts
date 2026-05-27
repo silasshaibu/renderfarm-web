@@ -178,6 +178,25 @@ export async function initDB() {
       created_at  TIMESTAMPTZ DEFAULT NOW()
     )
   `
+  // Additional columns added later
+  await sql`ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL`
+  await sql`ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS job_id      TEXT DEFAULT ''`
+  await sql`ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS updated_at  TIMESTAMPTZ DEFAULT NOW()`
+  await sql`ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`
+
+  // ── Ticket replies ─────────────────────────────────────────────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS ticket_replies (
+      id          SERIAL PRIMARY KEY,
+      ticket_id   INTEGER NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+      user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      is_support  BOOLEAN NOT NULL DEFAULT FALSE,
+      is_internal BOOLEAN NOT NULL DEFAULT FALSE,
+      message     TEXT NOT NULL,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS idx_ticket_replies_ticket ON ticket_replies(ticket_id)`
 
   // ── Rate-limit log — sliding-window counter per IP + action ─────────────────
   await sql`
