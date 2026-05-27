@@ -2325,6 +2325,30 @@ select.cost-limit-field {
   width:           100%;
 }
 
+/* ── Per-task retry button ───────────────────────────────────────────────── */
+.task-retry-btn {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  width:           24px;
+  height:          24px;
+  border-radius:   4px;
+  border:          1px solid transparent;
+  background:      transparent;
+  color:           #6b7280;
+  cursor:          pointer;
+  transition:      color 0.15s, border-color 0.15s, background 0.15s;
+}
+.task-retry-btn:hover:not(:disabled) {
+  color:            #0d9488;
+  border-color:     #0d948855;
+  background:       #0d948812;
+}
+.task-retry-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 /* ── Holding banner ──────────────────────────────────────────────────────── */
 .holding-banner {
   display: flex;

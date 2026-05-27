@@ -226,6 +226,8 @@ export default function JobDetailPage({ params }: PageProps) {
   const [dispatching,   setDispatching]   = useState(false)
   const [dispatchMsg,   setDispatchMsg]   = useState('')
   const [dispatchErr,   setDispatchErr]   = useState('')
+  const [retryingTasks, setRetryingTasks] = useState<Set<number>>(new Set())
+  const [taskErrors,    setTaskErrors]    = useState<Record<number, string>>({})
   const [taskPage,      setTaskPage]      = useState(1)
   const [selTask,       setSelTask]       = useState<number | null>(null)
   const [showScout,     setShowScout]     = useState(false)
@@ -305,6 +307,30 @@ export default function JobDetailPage({ params }: PageProps) {
       setDispatchErr(e instanceof Error ? e.message : 'Network error')
     } finally {
       setDispatching(false)
+    }
+  }
+
+  const handleTaskRetry = async (frameIdx: number) => {
+    if (!job || retryingTasks.has(frameIdx)) return
+    setRetryingTasks(prev => new Set(prev).add(frameIdx))
+    setTaskErrors(prev => { const n = { ...prev }; delete n[frameIdx]; return n })
+    try {
+      const token = getToken() ?? ''
+      const taskId = String(frameIdx).padStart(3, '0')
+      const res = await fetch(`/api/jobs/${job.jobNumber}/tasks/${taskId}/retry`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const json = await res.json() as { message?: string }
+      if (!res.ok) {
+        setTaskErrors(prev => ({ ...prev, [frameIdx]: json.message ?? 'Retry failed' }))
+      } else {
+        await load(true)
+      }
+    } catch (e) {
+      setTaskErrors(prev => ({ ...prev, [frameIdx]: e instanceof Error ? e.message : 'Network error' }))
+    } finally {
+      setRetryingTasks(prev => { const n = new Set(prev); n.delete(frameIdx); return n })
     }
   }
 
@@ -612,6 +638,7 @@ export default function JobDetailPage({ params }: PageProps) {
                 <th className="job-task-th right">ELAPSED</th>
                 <th className="job-task-th right">START TIME</th>
                 <th className="job-task-th right">END TIME</th>
+                <th className="job-task-th center">ACTION</th>
               </tr>
             </thead>
             <tbody>
@@ -645,6 +672,37 @@ export default function JobDetailPage({ params }: PageProps) {
                     <td className="job-task-td right text-gray-400">{fmtDuration(timing?.durationSec ?? null)}</td>
                     <td className="job-task-td right text-gray-400">{fmtTime(timing?.startedAt ?? null)}</td>
                     <td className="job-task-td right text-gray-400">{fmtTime(timing?.completedAt ?? null)}</td>
+                    <td className="job-task-td center">
+                      {['failed', 'killed', 'preempted'].includes(tStatus) && (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <button
+                            type="button"
+                            title={taskErrors[idx] ?? 'Retry this frame on a new VM'}
+                            disabled={retryingTasks.has(idx)}
+                            onClick={e => { e.stopPropagation(); handleTaskRetry(idx) }}
+                            className="task-retry-btn">
+                            {retryingTasks.has(idx) ? (
+                              <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                              </svg>
+                            ) : (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                                <polyline points="1 4 1 10 7 10"/>
+                                <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
+                              </svg>
+                            )}
+                            <span className="sr-only">Retry frame {frameNum}</span>
+                          </button>
+                          {taskErrors[idx] && (
+                            <span className="text-red-400 text-[10px] leading-tight max-w-[80px] text-center">
+                              {taskErrors[idx]}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 )
               })}
