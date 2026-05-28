@@ -6,6 +6,49 @@ import Link from 'next/link'
 import { setToken } from '@/lib/auth'
 import s from './register.module.css'
 
+function OnboardingScreen({ firstName, bonusPending, onDashboard }: {
+  firstName: string
+  bonusPending: boolean
+  onDashboard: () => void
+}) {
+  return (
+    <div className={s.onboarding}>
+      <div className={s.onboardingBox}>
+        <div className={s.onboardingIcon}>🎉</div>
+        <h2 className={s.onboardingTitle}>Welcome to Renderfarm, {firstName}!</h2>
+        {bonusPending ? (
+          <p className={s.onboardingSubtitle}>
+            Your account is under review. A Renderfarm admin will verify your account and activate your free credits shortly.
+          </p>
+        ) : (
+          <p className={s.onboardingSubtitle}>
+            Your account is ready and <strong className={s.creditHighlight}>$50 in free credits</strong> have been added to get you started.
+          </p>
+        )}
+        <ul className={s.onboardingList}>
+          <li><span className={s.check}>✓</span> Cloud GPU rendering powered by GCP</li>
+          <li><span className={s.check}>✓</span> Blender addon for one-click job submission</li>
+          <li><span className={s.check}>✓</span> Automatic output delivery to your machine</li>
+          <li><span className={s.check}>✓</span> Pay only for what you render</li>
+        </ul>
+        <div className={s.onboardingActions}>
+          <a
+            href="https://github.com/swade-art/renderfarm-companion/releases/latest"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={s.onboardingSecondary}
+          >
+            Download Blender Addon
+          </a>
+          <button type="button" onClick={onDashboard} className={s.onboardingPrimary}>
+            Go to Dashboard
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const COUNTRIES = [
   'United States', 'United Kingdom', 'Canada', 'Australia', 'Germany',
   'France', 'Netherlands', 'Japan', 'South Korea', 'India', 'Brazil',
@@ -26,10 +69,12 @@ export default function RegisterPage() {
     password:        '',
     confirmPassword: '',
   })
-  const [agreedTerms, setAgreedTerms] = useState(false)
-  const [notRobot,    setNotRobot]    = useState(false)
-  const [loading,     setLoading]     = useState(false)
-  const [error,       setError]       = useState('')
+  const [agreedTerms,   setAgreedTerms]   = useState(false)
+  const [notRobot,      setNotRobot]      = useState(false)
+  const [loading,       setLoading]       = useState(false)
+  const [error,         setError]         = useState('')
+  const [onboarding,    setOnboarding]    = useState(false)
+  const [bonusPending,  setBonusPending]  = useState(false)
 
   const set = (k: keyof typeof form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -75,6 +120,7 @@ export default function RegisterPage() {
       const data = await res.json() as {
         access_token?: string
         message?: string
+        bonusPending?: boolean
         user?: { id: string; email: string; isAdmin: boolean }
       }
 
@@ -83,16 +129,26 @@ export default function RegisterPage() {
         return
       }
 
-      // Auto sign-in — save token then redirect to jobs
       if (data.access_token && data.user) {
         setToken(data.access_token, data.user)
       }
-      router.push('/')
+      setBonusPending(Boolean(data.bonusPending))
+      setOnboarding(true)
     } catch {
       setError('Network error — please try again')
     } finally {
       setLoading(false)
     }
+  }
+
+  if (onboarding) {
+    return (
+      <OnboardingScreen
+        firstName={form.firstName}
+        bonusPending={bonusPending}
+        onDashboard={() => router.push('/')}
+      />
+    )
   }
 
   return (
@@ -264,6 +320,9 @@ export default function RegisterPage() {
                 <span className={s.captchaLogoText}>Privacy · Terms</span>
               </div>
             </div>
+
+            {/* Credit promo */}
+            <p className={s.creditPromo}>New accounts receive $50 in free render credits!</p>
 
             {/* Submit */}
             <button type="submit" disabled={!canSubmit || loading} className={s.submitBtn}>

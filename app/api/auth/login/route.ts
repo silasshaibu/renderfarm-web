@@ -30,10 +30,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 })
     }
 
-    const user  = rows[0] as { id: number; email: string; password_hash: string; is_admin: boolean }
+    const user  = rows[0] as { id: number; email: string; password_hash: string; is_admin: boolean; status?: string; suspension_reason?: string }
     const valid = await bcrypt.compare(password, user.password_hash)
     if (!valid) {
       return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 })
+    }
+
+    // ── Suspension check ──────────────────────────────────────────────────
+    if (user.status === 'suspended') {
+      return NextResponse.json(
+        { message: `Your account has been suspended. Reason: ${user.suspension_reason ?? 'Contact support.'}` },
+        { status: 403 }
+      )
     }
 
     const jti          = makeJti()

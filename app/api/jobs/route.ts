@@ -5,6 +5,7 @@ import { sendEmail, jobCompleteEmail } from '@/lib/email'
 import { spawnChunkVMs } from '@/lib/gcp/compute'
 import { INTERNAL_SECRET } from '@/lib/gcp/clients'
 import { parseFrameRange, chunkFrames, resolveScoutFrames } from '@/lib/utils/frames'
+import { ensureCreditSchema, getBalance } from '@/lib/credits'
 
 
 
@@ -82,6 +83,30 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()
+  await ensureCreditSchema().catch(() => null)
+
+  // ── Suspension check ──────────────────────────────────────────────────────
+  const userRow = await sql`SELECT status, suspension_reason FROM users WHERE id = ${user.sub} LIMIT 1` as Record<string, unknown>[]
+  if (userRow[0]?.status === 'suspended') {
+    return NextResponse.json(
+      { message: `Account suspended. Reason: ${userRow[0].suspension_reason ?? 'Contact support.'}` },
+      { status: 403 }
+    )
+  }
+
+  // ── Credit balance check ─────────────────────────────────────────────────
+  const balance = await getBalance(user.sub).catch(() => 999) // fail open if credits table missing
+  if (balance <= 0) {
+    return NextResponse.json(
+      {
+        error:        'Insufficient credits',
+        message:      'You have no credits remaining. Please purchase credits to continue rendering.',
+        balance,
+        purchase_url: '/billing',
+      },
+      { status: 402 }
+    )
+  }
 
   const data = await req.json() as {
     title?:              string

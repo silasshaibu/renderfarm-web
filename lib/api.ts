@@ -240,7 +240,13 @@ export const payments = {
 export interface AdminUser {
   id: string; name: string; email: string
   isAdmin: boolean; isActive: boolean
-  status: 'active' | 'inactive' | 'pending'
+  status: 'active' | 'inactive' | 'pending' | 'suspended'
+  suspensionReason?: string | null
+  createdAt?: string
+  creditBalance: number
+  abuseSignals: number
+  jobCount: number
+  lastActive?: string
 }
 
 export const admin = {
@@ -257,6 +263,33 @@ export const admin = {
 
   deleteUser: (id: string) =>
     request(`/admin/users/${id}`, { method: 'DELETE' }),
+
+  grantCredits: (id: string, amount: number, description: string) =>
+    request(`/admin/users/${id}/credits`, { method: 'POST', body: JSON.stringify({ amount, description }) }),
+
+  userCredits: (id: string, page = 1) =>
+    request(`/admin/users/${id}/credits?page=${page}&pageSize=25`),
+
+  suspend: (id: string, reason: string) =>
+    request(`/admin/users/${id}/suspend`, { method: 'POST', body: JSON.stringify({ action: 'suspend', reason }) }),
+
+  unsuspend: (id: string) =>
+    request(`/admin/users/${id}/suspend`, { method: 'POST', body: JSON.stringify({ action: 'unsuspend' }) }),
+
+  impersonate: (id: string) =>
+    request(`/admin/users/${id}/impersonate`, { method: 'POST' }),
+
+  abuseSignals: (id: string) =>
+    request(`/admin/users/${id}/abuse-signals`),
+
+  reviewAbuseSignal: (id: string, signalId: number, action: 'allow' | 'block' | 'ignore') =>
+    request(`/admin/users/${id}/abuse-signals`, { method: 'POST', body: JSON.stringify({ signalId, action }) }),
+
+  creditsOverview: () =>
+    request('/admin/credits-overview'),
+
+  auditLog: (page = 1, action = '', adminId = '') =>
+    request(`/admin/audit-log?page=${page}&pageSize=50${action ? `&action=${action}` : ''}${adminId ? `&adminId=${adminId}` : ''}`),
 
   limits: () => request('/admin/limits'),
 

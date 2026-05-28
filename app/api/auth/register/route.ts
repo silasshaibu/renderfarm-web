@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { sql, initDB } from '@/lib/db'
 import { JWT_SECRET, makeJti } from '@/lib/auth-server'
+import { ensureCreditSchema, normalizeEmail, detectAbuse, grantWelcomeBonus } from '@/lib/credits'
 
 function getCallerAdmin(req: NextRequest): boolean {
   // If the request carries a valid admin JWT, the caller is an admin
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
     const emailNorm = email.trim().toLowerCase()
 
     await initDB()
+    await ensureCreditSchema()
 
     // Ensure extra columns exist on the users table
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS name         TEXT DEFAULT ''`
@@ -63,9 +65,14 @@ export async function POST(req: NextRequest) {
     const name         = [firstName.trim(), (lastName ?? '').trim()].filter(Boolean).join(' ')
     const acctName     = (accountName?.trim() || firstName.trim())
     const passwordHash = await bcrypt.hash(password, 10)
+    const normEmail    = normalizeEmail(emailNorm)
+    const ip           = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? ''
 
     const rows = await sql`
-      INSERT INTO users (email, password_hash, is_admin, name, account_name, company, country, phone)
+      INSERT INTO users (
+        email, password_hash, is_admin, name, account_name, company, country, phone,
+        normalized_email, registration_ip
+      )
       VALUES (
         ${emailNorm},
         ${passwordHash},
@@ -74,12 +81,24 @@ export async function POST(req: NextRequest) {
         ${acctName},
         ${company?.trim()  ?? ''},
         ${country?.trim()  ?? ''},
-        ${phone?.trim()    ?? ''}
+        ${phone?.trim()    ?? ''},
+        ${normEmail},
+        ${ip}
       )
       RETURNING id, email, is_admin
     `
 
     const user = rows[0] as { id: number; email: string; is_admin: boolean }
+
+    // ── Abuse detection + welcome bonus ───────────────────────────────────────
+    const abuse = await detectAbuse({ userId: user.id, email: emailNorm, normEmail, ip })
+    let bonusPending = false
+    if (!abuse.flagged) {
+      await grantWelcomeBonus(user.id, emailNorm, firstName.trim())
+    } else {
+      // Conservative: flag for admin review, withhold bonus for now
+      bonusPending = true
+    }
 
     // ── Auto sign-in — return a JWT so the client can log straight in ─────────
     const jti          = makeJti()
@@ -90,7 +109,6 @@ export async function POST(req: NextRequest) {
       { expiresIn: '7d' },
     )
 
-    const ip        = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? ''
     const userAgent = req.headers.get('user-agent') ?? ''
     await sql`
       INSERT INTO user_sessions (user_id, jti, ip_address, user_agent, expires_at)
@@ -99,7 +117,11 @@ export async function POST(req: NextRequest) {
     `
 
     return NextResponse.json(
-      { access_token, user: { id: String(user.id), email: user.email, isAdmin: user.is_admin } },
+      {
+        access_token,
+        user: { id: String(user.id), email: user.email, isAdmin: user.is_admin },
+        bonusPending,
+      },
       { status: 201 },
     )
   } catch (err) {

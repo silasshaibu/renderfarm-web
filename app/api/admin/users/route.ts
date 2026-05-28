@@ -2,20 +2,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 import { sendEmail, userInviteEmail, baseUrl } from '@/lib/email'
+import { ensureCreditSchema } from '@/lib/credits'
 
-
-
-function rowToUser(r: Record<string, unknown>) {
+function rowToUser(r: Record<string, unknown>, creditBalance?: number, abuseCount?: number, jobCount?: number) {
   const isActive  = r.is_active != null ? Boolean(r.is_active) : true
   const isInvited = Boolean(r.invited)
-  const status    = isInvited && isActive ? 'pending' : isActive ? 'active' : 'inactive'
+  const suspended = (r.status as string) === 'suspended'
+  const status    = suspended ? 'suspended' : isInvited && isActive ? 'pending' : isActive ? 'active' : 'inactive'
   return {
-    id:       String(r.id),
-    email:    r.email      as string,
-    name:     (r.name      as string | undefined) ?? (r.email as string).split('@')[0],
-    isAdmin:  Boolean(r.is_admin),
+    id:                String(r.id),
+    email:             r.email as string,
+    name:              (r.name as string | undefined) ?? (r.email as string).split('@')[0],
+    isAdmin:           Boolean(r.is_admin),
     isActive,
     status,
+    suspensionReason:  (r.suspension_reason as string | undefined) ?? null,
+    createdAt:         r.created_at as string | undefined,
+    creditBalance:     creditBalance ?? 0,
+    abuseSignals:      abuseCount ?? 0,
+    jobCount:          jobCount ?? 0,
+    lastActive:        r.last_active as string | undefined,
   }
 }
 
@@ -28,6 +34,7 @@ export async function GET(req: NextRequest) {
   if (!user.isAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 
   await initDB()
+  await ensureCreditSchema().catch(() => null)
 
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT DEFAULT ''`
@@ -67,7 +74,23 @@ export async function GET(req: NextRequest) {
     rows = await sql`SELECT * FROM users ORDER BY id ASC` as Record<string, unknown>[]
   }
 
-  return NextResponse.json(rows.map(rowToUser))
+  // Enrich with credit balances, abuse signal counts, job counts
+  const [creditRows, abuseRows, jobRows] = await Promise.all([
+    sql`SELECT user_id, SUM(amount) AS balance FROM credits GROUP BY user_id` as Promise<Record<string, unknown>[]>,
+    sql`SELECT user_id, COUNT(*) AS cnt FROM abuse_signals WHERE reviewed = FALSE GROUP BY user_id` as Promise<Record<string, unknown>[]>,
+    sql`SELECT user_id, COUNT(*) AS cnt FROM jobs GROUP BY user_id` as Promise<Record<string, unknown>[]>,
+  ]).catch(() => [[] as Record<string, unknown>[], [] as Record<string, unknown>[], [] as Record<string, unknown>[]])
+
+  const creditMap: Record<string, number>  = {}
+  const abuseMap:  Record<string, number>  = {}
+  const jobMap:    Record<string, number>  = {}
+  for (const r of creditRows) creditMap[String(r.user_id)] = Number(r.balance)
+  for (const r of abuseRows)  abuseMap[String(r.user_id)]  = Number(r.cnt)
+  for (const r of jobRows)    jobMap[String(r.user_id)]    = Number(r.cnt)
+
+  return NextResponse.json(rows.map(r =>
+    rowToUser(r, creditMap[String(r.id)], abuseMap[String(r.id)], jobMap[String(r.id)])
+  ))
 }
 
 // ── POST /api/admin/users ─────────────────────────────────────────────────────

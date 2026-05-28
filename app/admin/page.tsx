@@ -129,30 +129,374 @@ function StatusBadge({ status }: { status: string }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 1: USERS
 // ─────────────────────────────────────────────────────────────────────────────
-function UsersTab() {
+
+// Credit history modal for admin
+interface CreditItem { id: number; amount: number; type: string; description: string; jobId: number | null; createdAt: string; balance: number }
+const CREDIT_TYPE_COLORS: Record<string, string> = {
+  welcome_bonus: 'text-green-400 bg-green-400/10 border-green-400/25',
+  purchased:     'text-blue-400 bg-blue-400/10 border-blue-400/25',
+  admin_grant:   'text-purple-400 bg-purple-400/10 border-purple-400/25',
+  refund:        'text-cyan-400 bg-cyan-400/10 border-cyan-400/25',
+  usage:         'text-gray-500 bg-gray-500/10 border-gray-500/25',
+}
+
+function AdminCreditModal({ user, onClose, onRefresh }: { user: AdminUser; onClose(): void; onRefresh(): void }) {
   const toast = useToast()
-  const [require2fa,   setRequire2fa]   = useState(false)
-  const [newEmail,     setNewEmail]     = useState('')
-  const [newAdmin,     setNewAdmin]     = useState(false)
-  const [emailError,   setEmailError]   = useState('')
-  const [addingUser,   setAddingUser]   = useState(false)
-  const [userFilter,   setUserFilter]   = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [saved2fa,     setSaved2fa]     = useState(false)
-  const [saving2fa,    setSaving2fa]    = useState(false)
-  const [removeTarget, setRemoveTarget] = useState<AdminUser | null>(null)
+  const [tab,        setTab]        = useState<'history'|'grant'>('history')
+  const [items,      setItems]      = useState<CreditItem[]>([])
+  const [balance,    setBalance]    = useState(user.creditBalance)
+  const [page,       setPage]       = useState(1)
+  const [pages,      setPages]      = useState(1)
+  const [loading,    setLoading]    = useState(true)
+  const [amount,     setAmount]     = useState('')
+  const [reason,     setReason]     = useState('')
+  const [granting,   setGranting]   = useState(false)
+
+  const loadHistory = useCallback(async (p: number) => {
+    setLoading(true)
+    try {
+      const d = await adminApi.userCredits(user.id, p) as { balance: number; items: CreditItem[]; pages: number; page: number }
+      setBalance(d.balance); setItems(d.items); setPages(d.pages); setPage(d.page)
+    } catch { toast.error('Failed to load credit history') }
+    finally { setLoading(false) }
+  }, [user.id, toast])
+
+  useEffect(() => { loadHistory(1) }, [loadHistory])
+
+  const handleGrant = async () => {
+    const amt = parseFloat(amount)
+    if (!amt || !reason.trim()) { toast.error('Amount and reason required'); return }
+    setGranting(true)
+    try {
+      await adminApi.grantCredits(user.id, amt, reason.trim())
+      toast.success(`Credits ${amt > 0 ? 'granted' : 'deducted'} for ${user.email}`)
+      setAmount(''); setReason(''); setTab('history'); loadHistory(1); onRefresh()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
+    finally { setGranting(false) }
+  }
+
+  function fmtDate(iso: string) {
+    return new Date(iso).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
+  }
+
+  return (
+    <div className="enterprise-modal-overlay" onClick={onClose}>
+      <div className="cost-limit-modal-card" style={{ maxWidth: 680, width: '100%' }} onClick={e => e.stopPropagation()}>
+        <div className="cost-limit-modal-title">
+          <div>
+            <span>Credits — {user.email}</span>
+            <span className={`ml-2 text-sm font-mono ${balance > 10 ? 'text-white' : balance >= 5 ? 'text-amber-400' : 'text-red-400'}`}>${balance.toFixed(2)}</span>
+          </div>
+          <button type="button" className="cost-limit-close-btn" onClick={onClose}>×</button>
+        </div>
+        <hr className="payment-modal-divider" />
+        <div className="flex gap-3 mb-4">
+          <button type="button" onClick={() => setTab('history')}
+            className={`text-xs px-3 py-1.5 rounded ${tab==='history' ? 'bg-blue-600 text-white' : 'text-gray-400 border border-white/10'}`}>
+            History
+          </button>
+          <button type="button" onClick={() => setTab('grant')}
+            className={`text-xs px-3 py-1.5 rounded ${tab==='grant' ? 'bg-blue-600 text-white' : 'text-gray-400 border border-white/10'}`}>
+            Grant / Deduct
+          </button>
+        </div>
+
+        {tab === 'history' && (
+          <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+            {loading ? <p className="text-gray-500 text-sm text-center py-8">Loading…</p> : items.length === 0
+              ? <p className="text-gray-600 text-sm text-center py-8">No transactions yet.</p>
+              : <table className="w-full text-sm">
+                  <thead><tr className="text-left">
+                    {['Date','Type','Description','Amount','Balance'].map(h => (
+                      <th key={h} className="text-xs text-gray-500 font-medium uppercase tracking-wider pb-2 pr-3">{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody className="divide-y divide-white/5">
+                    {items.map(item => {
+                      const color = CREDIT_TYPE_COLORS[item.type] ?? 'text-gray-500 bg-gray-500/10 border-gray-500/25'
+                      return (
+                        <tr key={String(item.id)}>
+                          <td className="py-2 pr-3 text-gray-400 text-xs whitespace-nowrap">{fmtDate(String(item.createdAt))}</td>
+                          <td className="py-2 pr-3"><span className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] font-medium ${color}`}>{item.type}</span></td>
+                          <td className="py-2 pr-3 text-gray-300 text-xs max-w-[160px] truncate">{String(item.description)}</td>
+                          <td className={`py-2 pr-3 text-xs font-mono font-medium ${item.amount >= 0 ? 'text-green-400' : 'text-red-400'}`}>{item.amount >= 0 ? '+' : ''}{item.amount.toFixed(2)}</td>
+                          <td className="py-2 text-xs font-mono text-gray-400">${item.balance.toFixed(2)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+            }
+            {pages > 1 && (
+              <div className="flex gap-2 justify-center mt-3">
+                <button type="button" onClick={() => loadHistory(page-1)} disabled={page<=1||loading}
+                  className="text-xs px-2 py-1 text-gray-400 border border-white/10 rounded disabled:opacity-40">‹</button>
+                <span className="text-xs text-gray-600 self-center">{page}/{pages}</span>
+                <button type="button" onClick={() => loadHistory(page+1)} disabled={page>=pages||loading}
+                  className="text-xs px-2 py-1 text-gray-400 border border-white/10 rounded disabled:opacity-40">›</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'grant' && (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-gray-500">Positive amount = grant credits. Negative amount = deduct credits.</p>
+            <div className="flex gap-3">
+              <input type="number" step="0.01" placeholder="Amount (e.g. 50 or -10)"
+                value={amount} onChange={e => setAmount(e.target.value)}
+                className="calc-input px-3 py-2 w-40 text-sm" />
+              <input type="text" placeholder="Reason (required)"
+                value={reason} onChange={e => setReason(e.target.value)}
+                className="calc-input px-3 py-2 flex-1 text-sm" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <GrayBtn label="Cancel" onClick={onClose} />
+              <button type="button" onClick={handleGrant} disabled={granting}
+                className="admin-btn-blue md">{granting ? 'Saving…' : 'Apply'}</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Abuse signals modal
+interface AbuseSignal { id: number; signalType: string; matchedEmail: string | null; details: string; reviewed: boolean; actionTaken: string; createdAt: string }
+function AbuseSignalModal({ user, onClose, onRefresh }: { user: AdminUser; onClose(): void; onRefresh(): void }) {
+  const toast = useToast()
+  const [signals,  setSignals]  = useState<AbuseSignal[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [actioning, setActioning] = useState<number | null>(null)
+
+  useEffect(() => {
+    adminApi.abuseSignals(user.id)
+      .then(d => setSignals(d as AbuseSignal[]))
+      .catch(() => toast.error('Failed to load'))
+      .finally(() => setLoading(false))
+  }, [user.id, toast])
+
+  const take = async (signalId: number, action: 'allow' | 'block' | 'ignore') => {
+    setActioning(signalId)
+    try {
+      await adminApi.reviewAbuseSignal(user.id, signalId, action)
+      toast.success(`Signal ${action}ed.`)
+      setSignals(s => s.map(x => x.id === signalId ? { ...x, reviewed: true, actionTaken: action } : x))
+      onRefresh()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
+    finally { setActioning(null) }
+  }
+
+  return (
+    <div className="enterprise-modal-overlay" onClick={onClose}>
+      <div className="cost-limit-modal-card" style={{ maxWidth: 560, width: '100%' }} onClick={e => e.stopPropagation()}>
+        <div className="cost-limit-modal-title">
+          <span>Abuse Signals — {user.email}</span>
+          <button type="button" className="cost-limit-close-btn" onClick={onClose}>×</button>
+        </div>
+        <hr className="payment-modal-divider" />
+        {loading ? <p className="text-gray-500 text-sm text-center py-6">Loading…</p> : signals.length === 0
+          ? <p className="text-gray-600 text-sm text-center py-6">No abuse signals found.</p>
+          : <div className="flex flex-col gap-4" style={{ maxHeight: 400, overflowY: 'auto' }}>
+              {signals.map(s => (
+                <div key={s.id} className="border border-white/10 rounded p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs text-amber-400 font-medium">{s.signalType}</span>
+                    {s.reviewed && <span className={`text-[10px] px-1.5 py-0.5 rounded border ${s.actionTaken === 'allow' ? 'text-green-400 bg-green-400/10 border-green-400/25' : s.actionTaken === 'block' ? 'text-red-400 bg-red-400/10 border-red-400/25' : 'text-gray-400 bg-gray-400/10 border-gray-400/25'}`}>{s.actionTaken}</span>}
+                  </div>
+                  <p className="text-xs text-gray-400 mb-2">{String(s.details)}</p>
+                  {s.matchedEmail && <p className="text-xs text-gray-500 mb-2">Matched: {s.matchedEmail}</p>}
+                  {!s.reviewed && (
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => take(s.id, 'allow')} disabled={actioning===s.id}
+                        className="text-xs px-2 py-1 rounded bg-green-800/40 border border-green-700/40 text-green-300 hover:bg-green-700/40 disabled:opacity-40">
+                        Allow — Grant Bonus
+                      </button>
+                      <button type="button" onClick={() => take(s.id, 'block')} disabled={actioning===s.id}
+                        className="text-xs px-2 py-1 rounded bg-red-900/40 border border-red-700/40 text-red-300 hover:bg-red-800/40 disabled:opacity-40">
+                        Block — Suspend
+                      </button>
+                      <button type="button" onClick={() => take(s.id, 'ignore')} disabled={actioning===s.id}
+                        className="text-xs px-2 py-1 rounded text-gray-500 border border-white/10 hover:text-gray-300 disabled:opacity-40">
+                        Ignore
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+        }
+      </div>
+    </div>
+  )
+}
+
+// Suspend modal
+function SuspendModal({ user, onClose, onRefresh }: { user: AdminUser; onClose(): void; onRefresh(): void }) {
+  const toast = useToast()
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+  const isSuspended = user.status === 'suspended'
+
+  const handle = async () => {
+    if (!isSuspended && !reason.trim()) { toast.error('Reason is required'); return }
+    setSaving(true)
+    try {
+      if (isSuspended) {
+        await adminApi.unsuspend(user.id)
+        toast.success(`${user.email} unsuspended.`)
+      } else {
+        await adminApi.suspend(user.id, reason.trim())
+        toast.success(`${user.email} suspended.`)
+      }
+      onRefresh(); onClose()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="enterprise-modal-overlay" onClick={onClose}>
+      <div className="cost-limit-modal-card admin-confirm-card" onClick={e => e.stopPropagation()}>
+        <div className="cost-limit-modal-title">
+          <span>{isSuspended ? 'Unsuspend' : 'Suspend'} — {user.email}</span>
+          <button type="button" className="cost-limit-close-btn" onClick={onClose}>×</button>
+        </div>
+        <hr className="payment-modal-divider" />
+        {isSuspended ? (
+          <p className="admin-confirm-body">Restore access for {user.email}?</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-gray-400">Provide a reason for suspending this account (sent to user by email).</p>
+            <textarea rows={3} placeholder="Reason for suspension..."
+              value={reason} onChange={e => setReason(e.target.value)}
+              className="calc-input px-3 py-2 text-sm w-full resize-none" />
+          </div>
+        )}
+        <div className="admin-confirm-actions">
+          <GrayBtn label="Cancel" onClick={onClose} />
+          <button type="button" onClick={handle} disabled={saving}
+            className={isSuspended ? 'payment-confirm-btn' : 'admin-confirm-remove-btn'}>
+            {saving ? 'Saving…' : isSuspended ? 'Unsuspend' : 'Suspend Account'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Impersonation banner (shown after impersonating)
+function ImpersonateBanner({ email, onEnd }: { email: string; onEnd(): void }) {
+  return (
+    <div style={{ background: '#78350f', borderBottom: '2px solid #d97706', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999 }}>
+      <span style={{ color: '#fef3c7', fontSize: 13, fontWeight: 600 }}>⚠ You are impersonating {email}</span>
+      <button type="button" onClick={onEnd}
+        style={{ background: '#d97706', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+        End Session
+      </button>
+    </div>
+  )
+}
+
+// Audit log modal
+interface AuditEntry { id: number; action: string; details: Record<string, unknown>; ip: string; createdAt: string; adminEmail: string; targetEmail: string }
+function AuditLogModal({ onClose }: { onClose(): void }) {
+  const toast = useToast()
+  const [items,   setItems]   = useState<AuditEntry[]>([])
+  const [page,    setPage]    = useState(1)
+  const [pages,   setPages]   = useState(1)
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async (p: number) => {
+    setLoading(true)
+    try {
+      const d = await adminApi.auditLog(p) as { items: AuditEntry[]; pages: number; page: number }
+      setItems(d.items); setPages(d.pages); setPage(d.page)
+    } catch { toast.error('Failed to load audit log') }
+    finally { setLoading(false) }
+  }, [toast])
+
+  useEffect(() => { load(1) }, [load])
+
+  function fmtDate(iso: string) {
+    return new Date(iso).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })
+  }
+
+  return (
+    <div className="enterprise-modal-overlay" onClick={onClose}>
+      <div className="cost-limit-modal-card" style={{ maxWidth: 780, width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        <div className="cost-limit-modal-title">
+          <span>Audit Log</span>
+          <button type="button" className="cost-limit-close-btn" onClick={onClose}>×</button>
+        </div>
+        <hr className="payment-modal-divider" />
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {loading ? <p className="text-gray-500 text-sm text-center py-8">Loading…</p>
+            : items.length === 0 ? <p className="text-gray-600 text-sm text-center py-8">No audit log entries.</p>
+            : <table className="w-full text-sm">
+                <thead><tr className="text-left">
+                  {['Date','Admin','Target','Action','Details'].map(h => (
+                    <th key={h} className="text-xs text-gray-500 font-medium uppercase tracking-wider pb-2 pr-3 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody className="divide-y divide-white/5">
+                  {items.map(e => (
+                    <tr key={e.id}>
+                      <td className="py-2 pr-3 text-gray-400 text-xs whitespace-nowrap">{fmtDate(e.createdAt)}</td>
+                      <td className="py-2 pr-3 text-gray-300 text-xs">{e.adminEmail}</td>
+                      <td className="py-2 pr-3 text-gray-400 text-xs">{e.targetEmail || '—'}</td>
+                      <td className="py-2 pr-3 text-xs"><span className="text-blue-400">{e.action}</span></td>
+                      <td className="py-2 text-xs text-gray-500 max-w-[200px] truncate">{JSON.stringify(e.details)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+          }
+        </div>
+        {pages > 1 && (
+          <div className="flex gap-2 justify-center pt-3 border-t border-white/5">
+            <button type="button" onClick={() => load(page-1)} disabled={page<=1||loading} className="text-xs px-2 py-1 text-gray-400 border border-white/10 rounded disabled:opacity-40">‹ Prev</button>
+            <span className="text-xs text-gray-600 self-center">Page {page} of {pages}</span>
+            <button type="button" onClick={() => load(page+1)} disabled={page>=pages||loading} className="text-xs px-2 py-1 text-gray-400 border border-white/10 rounded disabled:opacity-40">Next ›</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function UsersTab() {
+  const toast    = useToast()
+  const router   = useRouter()
+  const [require2fa,      setRequire2fa]      = useState(false)
+  const [newEmail,        setNewEmail]        = useState('')
+  const [newAdmin,        setNewAdmin]        = useState(false)
+  const [emailError,      setEmailError]      = useState('')
+  const [addingUser,      setAddingUser]      = useState(false)
+  const [userFilter,      setUserFilter]      = useState('')
+  const [statusFilter,    setStatusFilter]    = useState('')
+  const [saved2fa,        setSaved2fa]        = useState(false)
+  const [saving2fa,       setSaving2fa]       = useState(false)
+  const [creditTarget,    setCreditTarget]    = useState<AdminUser | null>(null)
+  const [abuseTarget,     setAbuseTarget]     = useState<AdminUser | null>(null)
+  const [suspendTarget,   setSuspendTarget]   = useState<AdminUser | null>(null)
+  const [showAuditLog,    setShowAuditLog]    = useState(false)
+  const [impersonating,   setImpersonating]   = useState<{ email: string } | null>(null)
+  const [overview,        setOverview]        = useState<{ totalIssued: number; totalConsumed: number; outstanding: number; pendingAbuse: number } | null>(null)
+  const [openActions,     setOpenActions]     = useState<string | null>(null)
 
   const { data: apiUsers, loading, refetch } = useApiFetch(() => adminApi.users())
   const users: AdminUser[] = (apiUsers as AdminUser[] | null) ?? []
 
-  // Load 2FA setting
+  // Load credits overview + 2FA setting
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
     fetch('/api/wrangler-settings', { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
-      .then((s: Record<string, unknown> | null) => {
-        if (s?.require2fa !== undefined) setRequire2fa(Boolean(s.require2fa))
-      })
+      .then((s: Record<string, unknown> | null) => { if (s?.require2fa !== undefined) setRequire2fa(Boolean(s.require2fa)) })
+      .catch(() => null)
+    adminApi.creditsOverview()
+      .then(d => setOverview(d as typeof overview))
       .catch(() => null)
   }, [])
 
@@ -160,87 +504,99 @@ function UsersTab() {
     setSaving2fa(true)
     const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
     const ok = await fetch('/api/wrangler-settings', {
-      method:  'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body:    JSON.stringify({ require2fa }),
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ require2fa }),
     }).then(r => r.ok).catch(() => false)
     setSaving2fa(false)
     if (ok) { setSaved2fa(true); setTimeout(() => setSaved2fa(false), 2000); toast.success('2FA setting saved.') }
     else toast.error('Failed to save 2FA setting.')
   }
 
-  const validateEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)
-
   const handleAddUser = async () => {
     setEmailError('')
     if (!newEmail) { setEmailError('Email is required'); return }
-    if (!validateEmail(newEmail)) { setEmailError('Invalid email address'); return }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) { setEmailError('Invalid email'); return }
     setAddingUser(true)
     try {
       await adminApi.inviteUser(newEmail, newAdmin)
       toast.success(`Invitation sent to ${newEmail}.`)
-      setNewEmail(''); setNewAdmin(false)
-      await refetch()
+      setNewEmail(''); setNewAdmin(false); await refetch()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to add user'
+      const msg = e instanceof Error ? e.message : 'Failed'
       if (msg.includes('already exists')) setEmailError('User already exists')
       else toast.error(msg)
-    } finally {
-      setAddingUser(false)
-    }
+    } finally { setAddingUser(false) }
   }
 
-  const toggleAdmin = async (u: AdminUser) => {
+  const handleImpersonate = async (u: AdminUser) => {
     try {
-      await adminApi.updateUser(u.id, { isAdmin: !u.isAdmin })
-      await refetch()
-    } catch { toast.error('Failed to update user.') }
+      const d = await adminApi.impersonate(u.id) as { access_token: string; user: { id: string; email: string; isAdmin: boolean }; impersonator_email: string }
+      localStorage.setItem('rf_token', d.access_token)
+      localStorage.setItem('rf_user', JSON.stringify(d.user))
+      localStorage.setItem('rf_impersonating', JSON.stringify({ email: u.email, adminEmail: d.impersonator_email }))
+      setImpersonating({ email: u.email })
+      router.push('/')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to impersonate') }
   }
 
-  const confirmRemove = async () => {
-    if (!removeTarget) return
-    try {
-      await adminApi.deleteUser(removeTarget.id)
-      toast.success(`${removeTarget.email} removed.`)
-      await refetch()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to remove user.')
-    } finally {
-      setRemoveTarget(null)
-    }
+  const handleEndImpersonation = () => {
+    localStorage.removeItem('rf_token')
+    localStorage.removeItem('rf_user')
+    localStorage.removeItem('rf_impersonating')
+    setImpersonating(null)
+    window.location.href = '/admin'
   }
+
+  // Restore impersonation state on mount
+  useEffect(() => {
+    const imp = localStorage.getItem('rf_impersonating')
+    if (imp) { try { setImpersonating(JSON.parse(imp) as { email: string }) } catch { null } }
+  }, [])
 
   const filtered = users.filter(u => {
-    const emailOk  = userFilter ? u.email.toLowerCase().includes(userFilter.toLowerCase()) : true
+    const emailOk  = userFilter   ? u.email.toLowerCase().includes(userFilter.toLowerCase()) : true
     const statusOk = statusFilter ? u.status === statusFilter : true
     return emailOk && statusOk
   })
 
+  const fmtDate = (iso?: string) => iso ? new Date(iso).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '—'
+
   return (
     <div>
-      {removeTarget && (
-        <ConfirmModal
-          msg={`Are you sure you want to remove ${removeTarget.email} from this account?`}
-          onConfirm={confirmRemove}
-          onCancel={() => setRemoveTarget(null)}
-        />
+      {impersonating && <ImpersonateBanner email={impersonating.email} onEnd={handleEndImpersonation} />}
+      {creditTarget  && <AdminCreditModal  user={creditTarget}  onClose={() => setCreditTarget(null)}  onRefresh={refetch} />}
+      {abuseTarget   && <AbuseSignalModal  user={abuseTarget}   onClose={() => setAbuseTarget(null)}   onRefresh={refetch} />}
+      {suspendTarget && <SuspendModal      user={suspendTarget} onClose={() => setSuspendTarget(null)} onRefresh={refetch} />}
+      {showAuditLog  && <AuditLogModal     onClose={() => setShowAuditLog(false)} />}
+
+      {/* Credits Overview Cards */}
+      {overview && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          {[
+            { label: 'Credits Issued',    value: `$${overview.totalIssued.toFixed(2)}` },
+            { label: 'Credits Consumed',  value: `$${overview.totalConsumed.toFixed(2)}` },
+            { label: 'Outstanding',       value: `$${overview.outstanding.toFixed(2)}` },
+            { label: 'Pending Review',    value: String(overview.pendingAbuse), highlight: overview.pendingAbuse > 0 },
+          ].map(({ label, value, highlight }) => (
+            <div key={label} className="admin-section-box text-center py-3">
+              <p className={`text-xl font-bold ${highlight ? 'text-amber-400' : 'text-white'}`}>{value}</p>
+              <p className="text-xs text-gray-500 mt-1">{label}</p>
+            </div>
+          ))}
+        </div>
       )}
 
-      {/* Account Security Settings */}
+      {/* 2FA Setting */}
       <SectionBox title="Account Security Settings">
         <label className="flex items-start gap-2 cursor-pointer mb-3">
           <input type="checkbox" title="Require 2FA" aria-label="Require 2FA for all users"
-            className="mt-0.5 accent-blue-500"
-            checked={require2fa} onChange={() => setRequire2fa(v => !v)} />
+            className="mt-0.5 accent-blue-500" checked={require2fa} onChange={() => setRequire2fa(v => !v)} />
           <div>
-            <span className="text-sm text-gray-200">Require 2FA for all users in this account</span>
-            <p className="text-xs text-gray-500 mt-0.5">
-              When enabled, all users will be required to set up and use two-factor authentication.
-            </p>
+            <span className="text-sm text-gray-200">Require 2FA for all users</span>
+            <p className="text-xs text-gray-500 mt-0.5">When enabled, users must set up two-factor authentication.</p>
           </div>
         </label>
-        <button type="button" onClick={handle2faSave} disabled={saving2fa}
-          className="admin-btn-blue md">
+        <button type="button" onClick={handle2faSave} disabled={saving2fa} className="admin-btn-blue md">
           {saving2fa ? <><Spinner /> Saving…</> : saved2fa ? '✓ Saved' : 'Save Changes'}
         </button>
       </SectionBox>
@@ -249,16 +605,14 @@ function UsersTab() {
       <SectionBox title="Add Users">
         <div className="flex items-start gap-3 flex-wrap">
           <div className="flex flex-col gap-1 flex-1 min-w-[200px] max-w-xs">
-            <input type="email" id="new-user-email" placeholder="Email"
-              aria-label="New user email address"
+            <input type="email" placeholder="Email" aria-label="New user email"
               value={newEmail} onChange={e => { setNewEmail(e.target.value); setEmailError('') }}
               onKeyDown={e => { if (e.key === 'Enter') handleAddUser() }}
               className={['calc-input px-3 py-1.5', emailError ? 'border-red-500' : ''].join(' ')} />
             {emailError && <span className="text-xs text-red-400">{emailError}</span>}
           </div>
-          <label htmlFor="new-user-admin" className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer mt-1.5">
-            <input type="checkbox" id="new-user-admin" title="Grant admin role"
-              className="accent-blue-500"
+          <label className="flex items-center gap-1.5 text-sm text-gray-300 cursor-pointer mt-1.5">
+            <input type="checkbox" title="Admin" className="accent-blue-500"
               checked={newAdmin} onChange={() => setNewAdmin(v => !v)} />
             Admin
           </label>
@@ -267,25 +621,31 @@ function UsersTab() {
       </SectionBox>
 
       {/* Manage Users */}
-      <SectionBox title="Manage Users">
+      <SectionBox title="Manage Users" action={
+        <button type="button" onClick={() => setShowAuditLog(true)}
+          className="text-xs text-gray-400 border border-white/10 px-3 py-1.5 rounded hover:text-white hover:border-white/20 transition-colors">
+          View Audit Log
+        </button>
+      }>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div />
           <div className="flex items-center gap-3 text-sm text-gray-400">
-            <label htmlFor="user-filter" className="flex items-center gap-1.5">
+            <label className="flex items-center gap-1.5">
               Filter:
-              <input id="user-filter" type="text" title="Filter by email"
-                value={userFilter} onChange={e => setUserFilter(e.target.value)}
+              <input type="text" title="Filter by email" value={userFilter}
+                onChange={e => setUserFilter(e.target.value)}
                 className="calc-input px-2 py-1 w-36 text-sm" />
             </label>
-            <label htmlFor="status-filter" className="flex items-center gap-1.5">
+            <label className="flex items-center gap-1.5">
               Status:
-              <select id="status-filter" title="Filter by status"
-                value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-                className="calc-input px-2 py-1 text-sm w-32">
+              <select title="Filter by status" value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                className="calc-input px-2 py-1 text-sm w-36">
                 <option value="">All</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
                 <option value="pending">Pending</option>
+                <option value="suspended">Suspended</option>
               </select>
             </label>
           </div>
@@ -297,29 +657,71 @@ function UsersTab() {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="jobs-thead-row">
-                  {['EMAIL','STATUS','ADMIN','ACTIONS'].map(h => (
-                    <th key={h} className="jobs-th">{h}</th>
+                  {['EMAIL','NAME','STATUS','ADMIN','CREDITS','JOBS','JOINED','FLAGS','ACTIONS'].map(h => (
+                    <th key={h} className="jobs-th whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={4} className="jobs-td text-center text-gray-600 py-6">No users found.</td></tr>
+                  <tr><td colSpan={9} className="jobs-td text-center text-gray-600 py-6">No users found.</td></tr>
                 ) : filtered.map(u => (
                   <tr key={u.id} className="jobs-tbody-row">
                     <td className="jobs-td font-mono text-xs text-gray-300">{u.email}</td>
-                    <td className="jobs-td"><StatusBadge status={u.status} /></td>
+                    <td className="jobs-td text-xs text-gray-400">{u.name || '—'}</td>
                     <td className="jobs-td">
-                      <input type="checkbox" title="Admin role" aria-label={`Admin for ${u.email}`}
-                        className="accent-blue-500" checked={u.isAdmin}
-                        onChange={() => toggleAdmin(u)} />
+                      <StatusBadge status={u.status} />
+                      {u.status === 'suspended' && u.suspensionReason && (
+                        <p className="text-[10px] text-red-400/70 mt-0.5 max-w-[120px] truncate">{u.suspensionReason}</p>
+                      )}
                     </td>
                     <td className="jobs-td">
-                      <button type="button"
-                        onClick={() => setRemoveTarget(u)}
-                        className="text-xs text-gray-500 hover:text-red-400 transition-colors">
-                        Remove
+                      <input type="checkbox" title="Admin" aria-label={`Admin: ${u.email}`}
+                        className="accent-blue-500" checked={u.isAdmin}
+                        onChange={async () => { try { await adminApi.updateUser(u.id, { isAdmin: !u.isAdmin }); await refetch() } catch { toast.error('Failed') } }} />
+                    </td>
+                    <td className="jobs-td">
+                      <button type="button" onClick={() => setCreditTarget(u)}
+                        className={`text-xs font-mono font-medium hover:underline cursor-pointer ${u.creditBalance > 10 ? 'text-white' : u.creditBalance >= 5 ? 'text-amber-400' : 'text-red-400'}`}>
+                        ${u.creditBalance.toFixed(2)}
                       </button>
+                    </td>
+                    <td className="jobs-td text-xs text-gray-400 text-right">{u.jobCount}</td>
+                    <td className="jobs-td text-xs text-gray-500 whitespace-nowrap">{fmtDate(u.createdAt)}</td>
+                    <td className="jobs-td">
+                      {u.abuseSignals > 0 && (
+                        <button type="button" onClick={() => setAbuseTarget(u)}
+                          className="text-amber-400 text-xs hover:text-amber-300 transition-colors">
+                          ⚠ {u.abuseSignals}
+                        </button>
+                      )}
+                      {u.status === 'suspended' && <span className="text-red-500 text-xs ml-1">🔴</span>}
+                    </td>
+                    <td className="jobs-td relative">
+                      <button type="button"
+                        onClick={() => setOpenActions(openActions === u.id ? null : u.id)}
+                        className="text-xs text-gray-400 border border-white/10 px-2 py-1 rounded hover:text-white hover:border-white/20 transition-colors">
+                        Actions ▾
+                      </button>
+                      {openActions === u.id && (
+                        <div className="absolute right-0 mt-1 w-44 bg-[#1e2433] border border-white/10 rounded shadow-xl z-20 text-xs"
+                          style={{ top: '100%' }}>
+                          {[
+                            { label: 'View Credit History',   fn: () => { setCreditTarget(u); setOpenActions(null) } },
+                            { label: 'Grant Credits',         fn: () => { setCreditTarget(u); setOpenActions(null) } },
+                            { label: u.status==='suspended' ? 'Unsuspend Account' : 'Suspend Account',
+                              fn: () => { setSuspendTarget(u); setOpenActions(null) },
+                              red: u.status !== 'suspended' },
+                            { label: 'Review Abuse Signals',  fn: () => { setAbuseTarget(u);  setOpenActions(null) }, hidden: u.abuseSignals === 0 },
+                            { label: 'Impersonate User',      fn: () => { handleImpersonate(u); setOpenActions(null) }, amber: true },
+                          ].filter(x => !x.hidden).map(({ label, fn, red, amber }) => (
+                            <button key={label} type="button" onClick={fn}
+                              className={`w-full text-left px-3 py-2 hover:bg-white/5 transition-colors ${red ? 'text-red-400' : amber ? 'text-amber-400' : 'text-gray-300'}`}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

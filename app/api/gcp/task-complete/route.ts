@@ -3,6 +3,7 @@ import { sql, initDB } from '@/lib/db'
 import { INTERNAL_SECRET } from '@/lib/gcp/clients'
 import { getSignedDownloadUrls } from '@/lib/gcp/storage'
 import { syncJobStatus } from '@/lib/jobs/sync'
+import { ensureCreditSchema, addCredit, getBalance, maybeSendLowBalanceEmail } from '@/lib/credits'
 
 // POST { jobId, frame, status }
 // Called by the VM startup script when a frame finishes rendering.
@@ -14,6 +15,7 @@ export async function POST(req: NextRequest) {
   }
 
   await initDB()
+  await ensureCreditSchema().catch(() => null)
 
   // ── Cost calculation using calculator pricing model ───────────────────────
   // rate = (cores*0.048 + ramGb*0.006 + gpuHourly) * gcpMult(0.95)
@@ -86,6 +88,33 @@ export async function POST(req: NextRequest) {
       start_frame = COALESCE(tasks.start_frame, ${startFrame}),
       end_frame   = COALESCE(tasks.end_frame,   ${endFrame})
   `
+
+  // Deduct credits for this task if status is success/complete
+  if (status === 'success' || status === 'complete') {
+    try {
+      const jobUserRow = await sql`SELECT user_id, job_number FROM jobs WHERE id = ${jobId} LIMIT 1` as Record<string, unknown>[]
+      if (jobUserRow.length > 0 && costUsd > 0) {
+        const jobUserId  = Number(jobUserRow[0].user_id)
+        const jobNumber  = String(jobUserRow[0].job_number ?? jobId)
+        await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_id INTEGER DEFAULT NULL`
+        if (jobUserId) {
+          await addCredit({
+            userId:      jobUserId,
+            amount:      -costUsd,
+            type:        'usage',
+            description: `Job ${jobNumber} — Task ${String(chunkIndex).padStart(3, '0')} (frames ${startFrame}-${endFrame}, ${machineType})`,
+            jobId:       Number(jobId),
+          })
+          const newBalance = await getBalance(jobUserId)
+          const userEmailRow = await sql`SELECT email FROM users WHERE id = ${jobUserId} LIMIT 1` as Record<string, unknown>[]
+          const userEmail = userEmailRow[0]?.email as string | undefined
+          if (userEmail) await maybeSendLowBalanceEmail(jobUserId, userEmail, newBalance)
+        }
+      }
+    } catch (e) {
+      console.error('[task-complete] credit deduction failed:', e)
+    }
+  }
 
   // Load job details
   const jobRows = await sql`SELECT * FROM jobs WHERE id = ${jobId} LIMIT 1`

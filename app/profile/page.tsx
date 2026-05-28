@@ -437,6 +437,126 @@ function SessionsSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Credit History Modal
+// ---------------------------------------------------------------------------
+interface CreditItem {
+  id: number; amount: number; type: string; description: string
+  jobId: number | null; createdAt: string; balance: number
+}
+
+const CREDIT_TYPE_LABEL: Record<string, { label: string; color: string }> = {
+  welcome_bonus: { label: 'Bonus',       color: 'text-green-400 bg-green-400/10 border-green-400/25' },
+  purchased:     { label: 'Purchase',    color: 'text-blue-400  bg-blue-400/10  border-blue-400/25'  },
+  admin_grant:   { label: 'Admin Grant', color: 'text-purple-400 bg-purple-400/10 border-purple-400/25' },
+  refund:        { label: 'Refund',      color: 'text-cyan-400  bg-cyan-400/10  border-cyan-400/25'  },
+  usage:         { label: 'Usage',       color: 'text-gray-500  bg-gray-500/10  border-gray-500/25'  },
+}
+
+function CreditHistoryModal({ onClose, email: userEmail }: { onClose: () => void; email: string }) {
+  const [items,   setItems]   = useState<CreditItem[]>([])
+  const [balance, setBalance] = useState(0)
+  const [page,    setPage]    = useState(1)
+  const [pages,   setPages]   = useState(1)
+  const [total,   setTotal]   = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [err,     setErr]     = useState('')
+
+  const loadPage = useCallback(async (p: number) => {
+    setLoading(true)
+    try {
+      const d = await apiFetch(`/api/profile/credits?page=${p}&pageSize=25`) as {
+        balance: number; items: CreditItem[]; total: number; page: number; pages: number
+      }
+      setBalance(d.balance); setItems(d.items); setTotal(d.total); setPage(d.page); setPages(d.pages)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load credit history')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { loadPage(1) }, [loadPage])
+
+  function fmtDate(iso: string) {
+    return new Date(iso).toLocaleString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={onClose}>
+      <div className="calc-card w-full max-w-3xl mx-4 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4 shrink-0">
+          <div>
+            <h3 className="text-base font-semibold text-white">Credit History</h3>
+            <p className="text-xs text-gray-500 mt-0.5">{userEmail}</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
+        </div>
+
+        {err && <p className="text-red-400 text-sm mb-3 shrink-0">{err}</p>}
+
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <p className="text-gray-500 text-sm text-center py-8">Loading…</p>
+          ) : items.length === 0 ? (
+            <p className="text-gray-600 text-sm text-center py-8">No credit transactions yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-[#0f1117]">
+                <tr className="text-left">
+                  {['DATE', 'TYPE', 'DESCRIPTION', 'JOB', 'AMOUNT', 'BALANCE'].map(h => (
+                    <th key={h} className="text-xs text-gray-500 font-medium uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {items.map(item => {
+                  const t = CREDIT_TYPE_LABEL[item.type] ?? { label: item.type, color: 'text-gray-500 bg-gray-500/10 border-gray-500/25' }
+                  return (
+                    <tr key={item.id}>
+                      <td className="py-2.5 pr-4 text-gray-400 text-xs whitespace-nowrap">{fmtDate(item.createdAt)}</td>
+                      <td className="py-2.5 pr-4">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-medium ${t.color}`}>{t.label}</span>
+                      </td>
+                      <td className="py-2.5 pr-4 text-gray-300 text-xs max-w-[200px] truncate">{item.description}</td>
+                      <td className="py-2.5 pr-4 text-xs">
+                        {item.jobId ? <span className="text-blue-400 font-mono">{item.jobId}</span> : <span className="text-gray-600">—</span>}
+                      </td>
+                      <td className={`py-2.5 pr-4 text-xs font-mono font-medium ${item.amount >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {item.amount >= 0 ? '+' : ''}{item.amount.toFixed(2)}
+                      </td>
+                      <td className="py-2.5 text-xs font-mono text-gray-400">${item.balance.toFixed(2)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="shrink-0 pt-3 border-t border-white/5 flex items-center justify-between mt-3">
+          <div className="flex items-center gap-2">
+            {pages > 1 && (
+              <>
+                <button type="button" onClick={() => loadPage(page - 1)} disabled={page <= 1 || loading}
+                  className="px-2 py-1 text-xs text-gray-400 border border-white/10 rounded hover:text-white disabled:opacity-40">‹ Prev</button>
+                <span className="text-xs text-gray-600">Page {page} of {pages} ({total} entries)</span>
+                <button type="button" onClick={() => loadPage(page + 1)} disabled={page >= pages || loading}
+                  className="px-2 py-1 text-xs text-gray-400 border border-white/10 rounded hover:text-white disabled:opacity-40">Next ›</button>
+              </>
+            )}
+          </div>
+          <div className="text-sm font-semibold text-white">
+            Current Balance: <span className={balance > 10 ? 'text-white' : balance >= 5 ? 'text-amber-400' : 'text-red-400'}>${balance.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 export default function ProfilePage() {
@@ -446,6 +566,8 @@ export default function ProfilePage() {
   const [email,        setEmail]        = useState('')
   const [accountName,  setAccountName]  = useState('')
   const [showApiKey,   setShowApiKey]   = useState(false)
+  const [showCredits,  setShowCredits]  = useState(false)
+  const [creditBal,    setCreditBal]    = useState<number | null>(null)
   const [resetSent,    setResetSent]    = useState(false)
   const [resetting,    setResetting]    = useState(false)
   const [resetErr,     setResetErr]     = useState('')
@@ -454,13 +576,15 @@ export default function ProfilePage() {
 
   const load = useCallback(async () => {
     try {
-      const data = await apiFetch('/api/profile') as {
-        firstName: string; lastName: string; email: string; accountName: string
-      }
+      const [data, credits] = await Promise.all([
+        apiFetch('/api/profile') as Promise<{ firstName: string; lastName: string; email: string; accountName: string }>,
+        apiFetch('/api/profile/credits?pageSize=1').catch(() => null) as Promise<{ balance: number } | null>,
+      ])
       setFirstName(data.firstName)
       setLastName(data.lastName)
       setEmail(data.email)
       setAccountName(data.accountName)
+      if (credits?.balance != null) setCreditBal(credits.balance)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load profile')
     } finally {
@@ -509,6 +633,21 @@ export default function ProfilePage() {
             <ReadField label="Name"    value={fullName} />
             <ReadField label="Email"   value={email} />
             <ReadField label="Account" value={accountName} />
+
+            {creditBal !== null && (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">Credit Balance</span>
+                <div className="flex items-center gap-3 py-2 px-3 rounded bg-white/5 border border-white/10">
+                  <span className={`text-sm font-mono font-semibold ${creditBal > 10 ? 'text-white' : creditBal >= 5 ? 'text-amber-400' : 'text-red-400'}`}>
+                    ${creditBal.toFixed(2)}
+                  </span>
+                  <button type="button" onClick={() => setShowCredits(true)}
+                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors ml-auto">
+                    View Credit History
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="pt-2 border-t border-white/5">
               {resetSent && (
@@ -564,6 +703,9 @@ export default function ProfilePage() {
 
       {/* API Key Modal */}
       {showApiKey && <ApiKeyModal onClose={() => setShowApiKey(false)} />}
+
+      {/* Credit History Modal */}
+      {showCredits && <CreditHistoryModal email={email} onClose={() => setShowCredits(false)} />}
     </div>
   )
 }
