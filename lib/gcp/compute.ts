@@ -124,17 +124,17 @@ nvidia-smi || { echo "ERROR: nvidia-smi failed — GPU driver not ready"; exit 1
   return `#!/bin/bash
 set -e
 ${gpuInit}
-# ── 1. Download scene file from GCS to local disk (fast internal network) ──────
-mkdir -p "${localOutput}"
-echo "Downloading scene: gs://${GCP_BUCKET}/${gcsScenePath}"
-gsutil cp "gs://${GCP_BUCKET}/${gcsScenePath}" "${localScene}"
-echo "Scene downloaded: $(du -sh ${localScene} | cut -f1)"
-
-# ── 2. Signal render start ────────────────────────────────────────────────────
+# ── 1. Signal render start immediately (VM is alive, work beginning) ──────────
 curl -s -X POST ${appUrl}/api/gcp/task-start \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${internalSecret}" \\
   -d '{"jobId":"${jobId}","chunkIndex":${chunkIndex},"startFrame":${startFrame},"endFrame":${endFrame}}'
+
+# ── 2. Download scene file from GCS to local disk (fast internal network) ──────
+mkdir -p "${localOutput}"
+echo "Downloading scene: gs://${GCP_BUCKET}/${gcsScenePath}"
+gsutil cp "gs://${GCP_BUCKET}/${gcsScenePath}" "${localScene}"
+echo "Scene downloaded: $(du -sh ${localScene} | cut -f1)"
 
 # ── 3. Run Blender render on local disk (frames ${startFrame}–${endFrame}) ────
 echo "Rendering job=${jobId} chunk=${chunkIndex} frames=${startFrame}-${endFrame} software=${software} gpu=${useGpu}"
