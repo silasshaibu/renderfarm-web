@@ -142,17 +142,20 @@ const CREDIT_TYPE_COLORS: Record<string, string> = {
 
 const CREDIT_PRESETS = [5, 10, 25, 50, 100, 200]
 
-function AdminCreditModal({ user, onClose, onRefresh, defaultTab = 'history' }: { user: AdminUser; onClose(): void; onRefresh(): void; defaultTab?: 'history' | 'grant' }) {
+function AdminCreditModal({ user, onClose, onRefresh, defaultTab = 'history' }: { user: AdminUser; onClose(): void; onRefresh(): void; defaultTab?: 'history' | 'grant' | 'limit' }) {
   const toast = useToast()
-  const [tab,        setTab]        = useState<'history'|'grant'>(defaultTab)
-  const [items,      setItems]      = useState<CreditItem[]>([])
-  const [balance,    setBalance]    = useState(user.creditBalance)
-  const [page,       setPage]       = useState(1)
-  const [pages,      setPages]      = useState(1)
-  const [loading,    setLoading]    = useState(true)
-  const [amount,     setAmount]     = useState('')
-  const [reason,     setReason]     = useState('')
-  const [granting,   setGranting]   = useState(false)
+  const [tab,          setTab]          = useState<'history'|'grant'|'limit'>(defaultTab)
+  const [items,        setItems]        = useState<CreditItem[]>([])
+  const [balance,      setBalance]      = useState(user.creditBalance)
+  const [page,         setPage]         = useState(1)
+  const [pages,        setPages]        = useState(1)
+  const [loading,      setLoading]      = useState(true)
+  const [amount,       setAmount]       = useState('')
+  const [reason,       setReason]       = useState('')
+  const [granting,     setGranting]     = useState(false)
+  const [creditLimit,  setCreditLimit]  = useState<number | null>(null)
+  const [limitInput,   setLimitInput]   = useState('')
+  const [savingLimit,  setSavingLimit]  = useState(false)
 
   const loadHistory = useCallback(async (p: number) => {
     setLoading(true)
@@ -164,6 +167,25 @@ function AdminCreditModal({ user, onClose, onRefresh, defaultTab = 'history' }: 
   }, [user.id, toast])
 
   useEffect(() => { loadHistory(1) }, [loadHistory])
+
+  useEffect(() => {
+    adminApi.getCreditLimit(user.id)
+      .then(d => { setCreditLimit(d.creditLimit); setLimitInput(String(d.creditLimit)) })
+      .catch(() => null)
+  }, [user.id])
+
+  const handleSaveLimit = async () => {
+    const val = parseFloat(limitInput)
+    if (isNaN(val) || val < 0) { toast.error('Enter a valid non-negative number'); return }
+    setSavingLimit(true)
+    try {
+      await adminApi.setCreditLimit(user.id, val)
+      setCreditLimit(val)
+      toast.success(`Outstanding balance limit set to $${val.toFixed(2)} for ${user.email}`)
+      onRefresh()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
+    finally { setSavingLimit(false) }
+  }
 
   const handleGrant = async () => {
     const amt = parseFloat(amount)
@@ -200,6 +222,10 @@ function AdminCreditModal({ user, onClose, onRefresh, defaultTab = 'history' }: 
           <button type="button" onClick={() => setTab('grant')}
             className={`text-xs px-3 py-1.5 rounded ${tab==='grant' ? 'bg-blue-600 text-white' : 'text-gray-400 border border-white/10'}`}>
             Grant / Deduct
+          </button>
+          <button type="button" onClick={() => setTab('limit')}
+            className={`text-xs px-3 py-1.5 rounded ${tab==='limit' ? 'bg-purple-600 text-white' : 'text-gray-400 border border-white/10'}`}>
+            Balance Limit
           </button>
         </div>
 
@@ -282,6 +308,51 @@ function AdminCreditModal({ user, onClose, onRefresh, defaultTab = 'history' }: 
               <GrayBtn label="Cancel" onClick={onClose} />
               <button type="button" onClick={handleGrant} disabled={granting || !amount || !reason.trim()}
                 className="admin-btn-blue md">{granting ? 'Saving…' : parseFloat(amount||'0') >= 0 ? 'Grant Credits' : 'Deduct Credits'}</button>
+            </div>
+          </div>
+        )}
+
+        {tab === 'limit' && (
+          <div className="flex flex-col gap-4">
+            <div className="bg-purple-900/20 border border-purple-500/20 rounded p-3">
+              <p className="text-xs text-purple-300 font-medium mb-1">Outstanding Balance Limit</p>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                By default users are blocked from submitting jobs when their balance reaches $0.
+                Set a limit here to allow a user to run jobs on credit — they can go up to <strong className="text-white">−$[limit]</strong> before being blocked.
+                Set to <strong className="text-white">0</strong> to restore the default block-at-zero behaviour.
+              </p>
+            </div>
+            <div className="flex items-end gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-gray-500 uppercase tracking-wider">Limit ($)</label>
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-500 text-sm">−$</span>
+                  <input type="number" min="0" step="1" placeholder="0"
+                    value={limitInput} onChange={e => setLimitInput(e.target.value)}
+                    className="calc-input px-3 py-2 w-32 text-sm" />
+                </div>
+              </div>
+              <div className="flex gap-2 mb-0.5">
+                {[0, 50, 100, 200, 500].map(p => (
+                  <button key={p} type="button"
+                    onClick={() => setLimitInput(String(p))}
+                    className={`text-xs px-2.5 py-1.5 rounded border transition-colors ${limitInput === String(p) ? 'bg-purple-600 border-purple-500 text-white' : 'border-white/10 text-gray-400 hover:border-purple-500/50 hover:text-purple-300'}`}>
+                    {p === 0 ? 'None' : `$${p}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {creditLimit !== null && (
+              <p className="text-xs text-gray-500">
+                Current limit: <span className="text-white font-mono">{creditLimit === 0 ? 'None (block at $0)' : `−$${creditLimit.toFixed(2)}`}</span>
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <GrayBtn label="Cancel" onClick={onClose} />
+              <button type="button" onClick={handleSaveLimit} disabled={savingLimit}
+                className="text-xs px-4 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white font-semibold disabled:opacity-50 transition-colors">
+                {savingLimit ? 'Saving…' : 'Save Limit'}
+              </button>
             </div>
           </div>
         )}
@@ -506,7 +577,7 @@ function UsersTab() {
   const [saved2fa,        setSaved2fa]        = useState(false)
   const [saving2fa,       setSaving2fa]       = useState(false)
   const [creditTarget,    setCreditTarget]    = useState<AdminUser | null>(null)
-  const [creditTab,       setCreditTab]       = useState<'history'|'grant'>('history')
+  const [creditTab,       setCreditTab]       = useState<'history'|'grant'|'limit'>('history')
   const [abuseTarget,     setAbuseTarget]     = useState<AdminUser | null>(null)
   const [suspendTarget,   setSuspendTarget]   = useState<AdminUser | null>(null)
   const [showAuditLog,    setShowAuditLog]    = useState(false)
@@ -738,6 +809,7 @@ function UsersTab() {
                           {[
                             { label: 'View Credit History',   fn: () => { setCreditTab('history'); setCreditTarget(u); setOpenActions(null) } },
                             { label: 'Grant Credits',         fn: () => { setCreditTab('grant');   setCreditTarget(u); setOpenActions(null) } },
+                            { label: 'Set Balance Limit',     fn: () => { setCreditTab('limit');   setCreditTarget(u); setOpenActions(null) } },
                             { label: u.status==='suspended' ? 'Unsuspend Account' : 'Suspend Account',
                               fn: () => { setSuspendTarget(u); setOpenActions(null) },
                               red: u.status !== 'suspended' },

@@ -302,6 +302,14 @@ export const admin = {
   deleteLimit: (id: string) =>
     request(`/admin/limits/${id}`, { method: 'DELETE' }),
 
+  getCreditLimit: (id: string) =>
+    request<{ creditLimit: number }>(`/admin/users/${id}/credit-limit`),
+
+  setCreditLimit: (id: string, creditLimit: number) =>
+    request<{ ok: boolean; creditLimit: number }>(`/admin/users/${id}/credit-limit`, {
+      method: 'PATCH', body: JSON.stringify({ creditLimit }),
+    }),
+
   sessions: () => request('/admin/sessions'),
 
   terminateSession: (id: string) =>

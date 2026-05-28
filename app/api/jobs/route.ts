@@ -85,8 +85,8 @@ export async function POST(req: NextRequest) {
   await initDB()
   await ensureCreditSchema().catch(() => null)
 
-  // ── Suspension check ──────────────────────────────────────────────────────
-  const userRow = await sql`SELECT status, suspension_reason FROM users WHERE id = ${user.sub} LIMIT 1` as Record<string, unknown>[]
+  // ── Suspension + credit-limit check ──────────────────────────────────────
+  const userRow = await sql`SELECT status, suspension_reason, credit_limit FROM users WHERE id = ${user.sub} LIMIT 1` as Record<string, unknown>[]
   if (userRow[0]?.status === 'suspended') {
     return NextResponse.json(
       { message: `Account suspended. Reason: ${userRow[0].suspension_reason ?? 'Contact support.'}` },
@@ -95,12 +95,17 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Credit balance check ─────────────────────────────────────────────────
-  const balance = await getBalance(user.sub).catch(() => 999) // fail open if credits table missing
-  if (balance <= 0) {
+  // credit_limit > 0 means admin has granted this user an overdraft allowance.
+  // They can render as long as balance > -credit_limit.
+  const balance     = await getBalance(user.sub).catch(() => 999) // fail open if credits table missing
+  const creditLimit = Number(userRow[0]?.credit_limit ?? 0)
+  if (balance <= -creditLimit) {
     return NextResponse.json(
       {
         error:        'Insufficient credits',
-        message:      'You have no credits remaining. Please purchase credits to continue rendering.',
+        message:      creditLimit > 0
+          ? `You have reached your outstanding balance limit of $${creditLimit.toFixed(2)}. Please purchase credits to continue rendering.`
+          : 'You have no credits remaining. Please purchase credits to continue rendering.',
         balance,
         purchase_url: '/billing',
       },

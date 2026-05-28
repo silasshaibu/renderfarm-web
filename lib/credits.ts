@@ -66,6 +66,7 @@ export async function ensureCreditSchema() {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS normalized_email    TEXT    DEFAULT ''`
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS low_balance_notified_at TIMESTAMPTZ DEFAULT NULL`
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_bonus_claimed BOOLEAN DEFAULT FALSE`
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_limit NUMERIC(12,4) DEFAULT 0`
 }
 
 // ---------------------------------------------------------------------------
