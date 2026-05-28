@@ -23,7 +23,9 @@ export async function POST(req: NextRequest) {
     endFrame?:   number
     frame?:      number   // legacy single-frame compat
   }
-  const { jobId, status } = body
+  const { jobId } = body
+  // Normalise 'complete' → 'success' so the dashboard always shows 'success'
+  const status = body.status === 'complete' ? 'success' : body.status
   const chunkIndex = body.chunkIndex ?? 0
   const startFrame = body.startFrame ?? body.frame ?? 1
   const endFrame   = body.endFrame   ?? startFrame
