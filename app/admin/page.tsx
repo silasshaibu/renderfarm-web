@@ -127,6 +127,207 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TAB 0: OVERVIEW
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface OverviewData {
+  users:    { total: number; active: number; pending: number; suspended: number; admins: number; newThisWeek: number }
+  jobs:     { total: number; running: number; completed: number; failed: number; last24h: number; last7d: number }
+  sessions: { total: number; dashboard: number; addon: number }
+  credits:  { totalIssued: number; totalConsumed: number; outstanding: number }
+  storage:  { fileCount: number; totalBytes: number }
+  recentJobs:  { jobNumber: string; title: string; status: string; createdAt: string; userEmail: string }[]
+  recentUsers: { id: string; email: string; name: string; createdAt: string; status: string }[]
+}
+
+function StatCard({ label, value, sub, color = 'text-white' }: { label: string; value: string | number; sub?: string; color?: string }) {
+  return (
+    <div className="bg-white/[0.03] border border-white/8 rounded-lg p-4 flex flex-col gap-1">
+      <p className={`text-2xl font-bold tracking-tight ${color}`}>{value}</p>
+      <p className="text-xs text-gray-400 font-medium">{label}</p>
+      {sub && <p className="text-[11px] text-gray-600">{sub}</p>}
+    </div>
+  )
+}
+
+const JOB_STATUS_COLORS: Record<string, string> = {
+  running:  'text-blue-400 bg-blue-400/10 border-blue-400/25',
+  success:  'text-green-400 bg-green-400/10 border-green-400/25',
+  failed:   'text-red-400 bg-red-400/10 border-red-400/25',
+  queued:   'text-yellow-400 bg-yellow-400/10 border-yellow-400/25',
+  syncing:  'text-blue-300 bg-blue-300/10 border-blue-300/25',
+  pending:  'text-gray-400 bg-gray-400/10 border-gray-400/25',
+}
+
+function fmtBytes(b: number) {
+  if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`
+  if (b >= 1e6) return `${(b / 1e6).toFixed(1)} MB`
+  return `${(b / 1e3).toFixed(0)} KB`
+}
+
+function OverviewTab() {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+  const { data, loading } = useApiFetch<OverviewData>(() =>
+    fetch('/api/admin/overview', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json())
+  )
+
+  const fmtDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+
+  const fmtDateTime = (iso: string) =>
+    new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+  if (loading || !data) {
+    return <div className="flex items-center gap-2 text-gray-500 text-sm py-8"><Spinner /> Loading overview…</div>
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+
+      {/* ── Users ─────────────────────────────────────────────────────── */}
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Users</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <StatCard label="Total Users"   value={data.users.total} />
+          <StatCard label="Active"        value={data.users.active}      color="text-green-400" />
+          <StatCard label="Pending"       value={data.users.pending}     color={data.users.pending > 0 ? 'text-amber-400' : 'text-white'} />
+          <StatCard label="Suspended"     value={data.users.suspended}   color={data.users.suspended > 0 ? 'text-red-400' : 'text-white'} />
+          <StatCard label="Admins"        value={data.users.admins}      color="text-purple-400" />
+          <StatCard label="New This Week" value={data.users.newThisWeek} color="text-blue-400" />
+        </div>
+      </div>
+
+      {/* ── Jobs ──────────────────────────────────────────────────────── */}
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Render Jobs</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <StatCard label="Total Jobs"  value={data.jobs.total} />
+          <StatCard label="Running Now" value={data.jobs.running}   color={data.jobs.running > 0 ? 'text-blue-400' : 'text-white'} />
+          <StatCard label="Completed"   value={data.jobs.completed} color="text-green-400" />
+          <StatCard label="Failed"      value={data.jobs.failed}    color={data.jobs.failed > 0 ? 'text-red-400' : 'text-white'} />
+          <StatCard label="Last 24 hrs" value={data.jobs.last24h} />
+          <StatCard label="Last 7 days" value={data.jobs.last7d} />
+        </div>
+      </div>
+
+      {/* ── Credits + Sessions + Storage ──────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-white/[0.03] border border-white/8 rounded-lg p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Credits</p>
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Issued</span>
+              <span className="text-white font-mono">${data.credits.totalIssued.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Consumed</span>
+              <span className="text-red-400 font-mono">−${data.credits.totalConsumed.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm border-t border-white/8 pt-2 mt-1">
+              <span className="text-gray-300 font-medium">Outstanding</span>
+              <span className={`font-mono font-semibold ${data.credits.outstanding >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                ${data.credits.outstanding.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white/[0.03] border border-white/8 rounded-lg p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Active Sessions</p>
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Total</span>
+              <span className="text-white font-mono">{data.sessions.total}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="flex items-center gap-1.5 text-gray-400">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-400" /> Dashboard
+              </span>
+              <span className="text-white font-mono">{data.sessions.dashboard}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="flex items-center gap-1.5 text-gray-400">
+                <span className="inline-block w-2 h-2 rounded-full bg-purple-400" /> Addon
+              </span>
+              <span className="text-white font-mono">{data.sessions.addon}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white/[0.03] border border-white/8 rounded-lg p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Storage</p>
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Files</span>
+              <span className="text-white font-mono">{data.storage.fileCount.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Total Size</span>
+              <span className="text-white font-mono">{fmtBytes(data.storage.totalBytes)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Recent Activity ───────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-white/[0.03] border border-white/8 rounded-lg p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Recent Jobs</p>
+          {data.recentJobs.length === 0 ? (
+            <p className="text-gray-600 text-sm">No jobs yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-white/5">
+                {data.recentJobs.map(j => (
+                  <tr key={j.jobNumber}>
+                    <td className="py-2 pr-3 font-mono text-xs text-blue-400 whitespace-nowrap">{String(j.jobNumber)}</td>
+                    <td className="py-2 pr-3 text-gray-300 text-xs truncate max-w-[120px]">{String(j.title)}</td>
+                    <td className="py-2 pr-3">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${JOB_STATUS_COLORS[String(j.status)] ?? 'text-gray-400 border-gray-400/25'}`}>
+                        {String(j.status)}
+                      </span>
+                    </td>
+                    <td className="py-2 text-gray-500 text-xs whitespace-nowrap">{fmtDateTime(String(j.createdAt))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="bg-white/[0.03] border border-white/8 rounded-lg p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Recent Signups</p>
+          {data.recentUsers.length === 0 ? (
+            <p className="text-gray-600 text-sm">No users yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-white/5">
+                {data.recentUsers.map(u => (
+                  <tr key={u.id}>
+                    <td className="py-2 pr-3 text-gray-300 text-xs truncate max-w-[160px]">{String(u.email)}</td>
+                    <td className="py-2 pr-3">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                        u.status === 'active'    ? 'text-green-400 border-green-400/25 bg-green-400/10' :
+                        u.status === 'suspended' ? 'text-red-400 border-red-400/25 bg-red-400/10' :
+                        u.status === 'pending'   ? 'text-amber-400 border-amber-400/25 bg-amber-400/10' :
+                        'text-gray-400 border-gray-400/25'}`}>
+                        {String(u.status)}
+                      </span>
+                    </td>
+                    <td className="py-2 text-gray-500 text-xs whitespace-nowrap">{fmtDate(String(u.createdAt))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TAB 1: USERS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1886,18 +2087,19 @@ ${rows.map(t => `<tr>
 // Tab config + Page
 // ─────────────────────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'users',    label: 'Users',               Panel: UsersTab      },
-  { id: 'limits',   label: 'Cost Limits',         Panel: CostLimitsTab },
-  { id: 'projects', label: 'Projects',            Panel: ProjectsTab   },
-  { id: 'sessions', label: 'Sessions',            Panel: SessionsTab   },
-  { id: 'storage',  label: 'Storage',             Panel: StorageTab    },
-  { id: 'payment',  label: 'Payment Information', Panel: PaymentTab    },
+  { id: 'overview',  label: 'Overview',            Panel: OverviewTab   },
+  { id: 'users',     label: 'Users',               Panel: UsersTab      },
+  { id: 'limits',    label: 'Cost Limits',         Panel: CostLimitsTab },
+  { id: 'projects',  label: 'Projects',            Panel: ProjectsTab   },
+  { id: 'sessions',  label: 'Sessions',            Panel: SessionsTab   },
+  { id: 'storage',   label: 'Storage',             Panel: StorageTab    },
+  { id: 'payment',   label: 'Payment Information', Panel: PaymentTab    },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 
 export default function AdminPage() {
   const router = useRouter()
-  const [active,       setActive]       = useState<TabId>('users')
+  const [active,       setActive]       = useState<TabId>('overview')
   const [authChecked,  setAuthChecked]  = useState(false)
 
   // Admin guard — decode JWT client-side
