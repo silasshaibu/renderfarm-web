@@ -140,9 +140,11 @@ const CREDIT_TYPE_COLORS: Record<string, string> = {
   usage:         'text-gray-500 bg-gray-500/10 border-gray-500/25',
 }
 
-function AdminCreditModal({ user, onClose, onRefresh }: { user: AdminUser; onClose(): void; onRefresh(): void }) {
+const CREDIT_PRESETS = [5, 10, 25, 50, 100, 200]
+
+function AdminCreditModal({ user, onClose, onRefresh, defaultTab = 'history' }: { user: AdminUser; onClose(): void; onRefresh(): void; defaultTab?: 'history' | 'grant' }) {
   const toast = useToast()
-  const [tab,        setTab]        = useState<'history'|'grant'>('history')
+  const [tab,        setTab]        = useState<'history'|'grant'>(defaultTab)
   const [items,      setItems]      = useState<CreditItem[]>([])
   const [balance,    setBalance]    = useState(user.creditBalance)
   const [page,       setPage]       = useState(1)
@@ -240,20 +242,46 @@ function AdminCreditModal({ user, onClose, onRefresh }: { user: AdminUser; onClo
         )}
 
         {tab === 'grant' && (
-          <div className="flex flex-col gap-3">
-            <p className="text-xs text-gray-500">Positive amount = grant credits. Negative amount = deduct credits.</p>
-            <div className="flex gap-3">
-              <input type="number" step="0.01" placeholder="Amount (e.g. 50 or -10)"
-                value={amount} onChange={e => setAmount(e.target.value)}
-                className="calc-input px-3 py-2 w-40 text-sm" />
-              <input type="text" placeholder="Reason (required)"
-                value={reason} onChange={e => setReason(e.target.value)}
-                className="calc-input px-3 py-2 flex-1 text-sm" />
+          <div className="flex flex-col gap-4">
+            <div>
+              <p className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wider">Quick add credits</p>
+              <div className="flex flex-wrap gap-2">
+                {CREDIT_PRESETS.map(p => (
+                  <button key={p} type="button"
+                    onClick={() => setAmount(String(p))}
+                    className={`text-xs px-3 py-1.5 rounded border transition-colors ${amount === String(p) ? 'bg-green-600 border-green-500 text-white' : 'border-white/10 text-gray-300 hover:border-green-500/50 hover:text-green-400'}`}>
+                    +${p}
+                  </button>
+                ))}
+              </div>
             </div>
+            <div className="flex gap-3">
+              <div className="flex flex-col gap-1 w-40">
+                <label className="text-[10px] text-gray-500 uppercase tracking-wider">Amount ($)</label>
+                <input type="number" step="0.01" placeholder="Custom amount"
+                  value={amount} onChange={e => setAmount(e.target.value)}
+                  className="calc-input px-3 py-2 text-sm" />
+                <p className="text-[10px] text-gray-600">Negative to deduct</p>
+              </div>
+              <div className="flex flex-col gap-1 flex-1">
+                <label className="text-[10px] text-gray-500 uppercase tracking-wider">Reason (required)</label>
+                <input type="text" placeholder="e.g. Billing offset, goodwill credit…"
+                  value={reason} onChange={e => setReason(e.target.value)}
+                  className="calc-input px-3 py-2 text-sm" />
+              </div>
+            </div>
+            {amount && !isNaN(parseFloat(amount)) && (
+              <p className="text-xs text-gray-400">
+                New balance after:&nbsp;
+                <span className={parseFloat(amount) >= 0 ? 'text-green-400' : 'text-red-400'}>
+                  ${(balance + parseFloat(amount)).toFixed(2)}
+                </span>
+              </p>
+            )}
             <div className="flex justify-end gap-2">
               <GrayBtn label="Cancel" onClick={onClose} />
-              <button type="button" onClick={handleGrant} disabled={granting}
-                className="admin-btn-blue md">{granting ? 'Saving…' : 'Apply'}</button>
+              <button type="button" onClick={handleGrant} disabled={granting || !amount || !reason.trim()}
+                className="admin-btn-blue md">{granting ? 'Saving…' : parseFloat(amount||'0') >= 0 ? 'Grant Credits' : 'Deduct Credits'}</button>
             </div>
           </div>
         )}
@@ -478,6 +506,7 @@ function UsersTab() {
   const [saved2fa,        setSaved2fa]        = useState(false)
   const [saving2fa,       setSaving2fa]       = useState(false)
   const [creditTarget,    setCreditTarget]    = useState<AdminUser | null>(null)
+  const [creditTab,       setCreditTab]       = useState<'history'|'grant'>('history')
   const [abuseTarget,     setAbuseTarget]     = useState<AdminUser | null>(null)
   const [suspendTarget,   setSuspendTarget]   = useState<AdminUser | null>(null)
   const [showAuditLog,    setShowAuditLog]    = useState(false)
@@ -564,7 +593,7 @@ function UsersTab() {
   return (
     <div>
       {impersonating && <ImpersonateBanner email={impersonating.email} onEnd={handleEndImpersonation} />}
-      {creditTarget  && <AdminCreditModal  user={creditTarget}  onClose={() => setCreditTarget(null)}  onRefresh={refetch} />}
+      {creditTarget  && <AdminCreditModal  user={creditTarget}  defaultTab={creditTab} onClose={() => setCreditTarget(null)}  onRefresh={refetch} />}
       {abuseTarget   && <AbuseSignalModal  user={abuseTarget}   onClose={() => setAbuseTarget(null)}   onRefresh={refetch} />}
       {suspendTarget && <SuspendModal      user={suspendTarget} onClose={() => setSuspendTarget(null)} onRefresh={refetch} />}
       {showAuditLog  && <AuditLogModal     onClose={() => setShowAuditLog(false)} />}
@@ -681,7 +710,7 @@ function UsersTab() {
                         onChange={async () => { try { await adminApi.updateUser(u.id, { isAdmin: !u.isAdmin }); await refetch() } catch { toast.error('Failed') } }} />
                     </td>
                     <td className="jobs-td">
-                      <button type="button" onClick={() => setCreditTarget(u)}
+                      <button type="button" onClick={() => { setCreditTab('history'); setCreditTarget(u) }}
                         className={`text-xs font-mono font-medium hover:underline cursor-pointer ${u.creditBalance > 10 ? 'text-white' : u.creditBalance >= 5 ? 'text-amber-400' : 'text-red-400'}`}>
                         ${u.creditBalance.toFixed(2)}
                       </button>
@@ -707,8 +736,8 @@ function UsersTab() {
                         <div className="absolute right-0 mt-1 w-44 bg-[#1e2433] border border-white/10 rounded shadow-xl z-20 text-xs"
                           style={{ top: '100%' }}>
                           {[
-                            { label: 'View Credit History',   fn: () => { setCreditTarget(u); setOpenActions(null) } },
-                            { label: 'Grant Credits',         fn: () => { setCreditTarget(u); setOpenActions(null) } },
+                            { label: 'View Credit History',   fn: () => { setCreditTab('history'); setCreditTarget(u); setOpenActions(null) } },
+                            { label: 'Grant Credits',         fn: () => { setCreditTab('grant');   setCreditTarget(u); setOpenActions(null) } },
                             { label: u.status==='suspended' ? 'Unsuspend Account' : 'Suspend Account',
                               fn: () => { setSuspendTarget(u); setOpenActions(null) },
                               red: u.status !== 'suspended' },
