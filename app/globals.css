@@ -2361,6 +2361,16 @@ select.cost-limit-field {
 }
 .task-ctx-item--danger { color: #f87171; }
 .task-ctx-item--danger:hover { background: rgba(239,68,68,0.12); color: #fca5a5; }
+.task-ctx-item:disabled {
+  opacity:          0.35;
+  cursor:           default;
+  pointer-events:   none;
+}
+.task-ctx-sep {
+  height:           1px;
+  background:       rgba(255,255,255,0.08);
+  margin:           3px 6px;
+}
 .task-ctx-icon {
   width:            16px;
   text-align:       center;

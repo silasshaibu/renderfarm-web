@@ -149,6 +149,7 @@ const STATUS_CFG: Record<string, { globe: string; label: string }> = {
   failed:         { globe: 'failed',         label: 'failed'         },
   killed:         { globe: 'killed',         label: 'killed'         },
   preempted:      { globe: 'preempted',      label: 'preempted'      },
+  reviewed:       { globe: 'downloaded',     label: 'reviewed'       },
 }
 
 // ── Action buttons per job status ─────────────────────────────────────────────
@@ -185,9 +186,9 @@ const ACTIONS: Record<string, ActionDef[]> = {
 }
 
 // ── Per-frame task status ─────────────────────────────────────────────────────
-type TaskStatus = 'done' | 'running' | 'failed' | 'holding' | 'pending'
+type TaskStatus = 'done' | 'running' | 'failed' | 'holding' | 'pending' | 'reviewed'
 
-const DONE_STATUSES     = new Set(['done', 'success', 'downloaded'])
+const DONE_STATUSES     = new Set(['done', 'success', 'downloaded', 'reviewed'])
 const FAILED_STATUSES   = new Set(['failed', 'killed'])
 const HOLDING_STATUSES  = new Set(['holding'])
 const PENDING_STATUSES  = new Set(['queued', 'uploading', 'upload_pending', 'sync_pending', 'sync_failed', 'syncing', 'pending', 'preempted'])
@@ -375,12 +376,18 @@ export default function JobDetailPage({ params }: PageProps) {
 
     try {
       let res: Response
-      if (action === 'retry' || action === 'unhold') {
+      if (action === 'retry' || action === 'retry-failed' || action === 'retry-preempted' || action === 'retry-sync' || action === 'unhold') {
         res = await fetch(`${base}/retry`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
       } else if (action === 'hold') {
         res = await fetch(`${base}/hold`,  { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
       } else if (action === 'kill') {
         res = await fetch(`${base}/kill`,  { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+      } else if (action === 'reviewed') {
+        res = await fetch(`/api/jobs/${job.jobNumber}/tasks/${taskId}`, {
+          method:  'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ status: 'reviewed' }),
+        })
       } else {
         return
       }
@@ -794,34 +801,57 @@ export default function JobDetailPage({ params }: PageProps) {
         />
       )}
 
-      {/* ── Task right-click context menu ────────────────────────────────── */}
+      {/* ── Task right-click context menu — full fixed list, greyed when N/A ── */}
       {ctxMenu && (() => {
         const s = ctxMenu.status
-        const items: { label: string; action: string; icon: string; danger?: boolean }[] = []
-        if (['failed','killed','preempted','holding','pending'].includes(s))
-          items.push({ label: 'Retry',  action: 'retry',  icon: '↺' })
-        if (s === 'holding')
-          items.push({ label: 'Unhold', action: 'unhold', icon: '▶' })
-        if (['pending','running'].includes(s))
-          items.push({ label: 'Hold',   action: 'hold',   icon: '⏸' })
-        if (['pending','running','holding'].includes(s))
-          items.push({ label: 'Kill',   action: 'kill',   icon: '✕', danger: true })
+        const active = (actions: string[]) => actions.includes(s)
 
-        if (!items.length) return null
+        // Enabled rules per action — matches Conductor behaviour
+        const enabled: Record<string, boolean> = {
+          hold:            active(['pending','running','queued']),
+          kill:            active(['pending','running','holding','queued']),
+          retry:           !active(['done','complete','success']),
+          'retry-failed':  s === 'failed',
+          'retry-preempted': s === 'preempted',
+          'retry-sync':    active(['sync_failed','syncing']),
+          reviewed:        active(['done','complete','success','failed','killed']),
+          unhold:          s === 'holding',
+        }
+
+        type CtxEntry =
+          | { type: 'sep' }
+          | { type: 'item'; label: string; action: string; danger?: boolean }
+
+        const MENU: CtxEntry[] = [
+          { type: 'item', label: 'Hold',            action: 'hold'            },
+          { type: 'item', label: 'Kill',            action: 'kill', danger: true },
+          { type: 'sep'  },
+          { type: 'item', label: 'Retry',           action: 'retry'           },
+          { type: 'item', label: 'Retry Failed',    action: 'retry-failed'    },
+          { type: 'item', label: 'Retry Preempted', action: 'retry-preempted' },
+          { type: 'item', label: 'Retry Sync',      action: 'retry-sync'      },
+          { type: 'sep'  },
+          { type: 'item', label: 'Reviewed',        action: 'reviewed'        },
+          { type: 'item', label: 'Unhold',          action: 'unhold'          },
+        ]
+
         return (
           <div
             className="task-ctx-menu"
             style={{ '--ctx-top': `${ctxMenu.y}px`, '--ctx-left': `${ctxMenu.x}px` } as React.CSSProperties}
             onClick={e => e.stopPropagation()}>
-            <div className="task-ctx-header">Frame {ctxMenu.frameNum}</div>
-            {items.map(item => (
-              <button key={item.action} type="button"
-                className={`task-ctx-item${item.danger ? ' task-ctx-item--danger' : ''}`}
-                onClick={() => handleTaskAction(item.action, ctxMenu.idx)}>
-                <span className="task-ctx-icon">{item.icon}</span>
-                {item.label}
-              </button>
-            ))}
+            {MENU.map((entry, i) =>
+              entry.type === 'sep'
+                ? <div key={i} className="task-ctx-sep" />
+                : <button
+                    key={entry.action}
+                    type="button"
+                    disabled={!enabled[entry.action]}
+                    className={`task-ctx-item${entry.danger ? ' task-ctx-item--danger' : ''}`}
+                    onClick={() => enabled[entry.action] && handleTaskAction(entry.action, ctxMenu.idx)}>
+                    {entry.label}
+                  </button>
+            )}
           </div>
         )
       })()}
