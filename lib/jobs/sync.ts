@@ -38,8 +38,12 @@ export async function syncJobStatus(
   let next: string
   if (running > 0) {
     next = 'running'
-  } else if (pending > 0) {
+  } else if (pending > 0 && done === 0) {
+    // Nothing has completed yet — job is genuinely pending (just dispatched)
     next = 'pending'
+  } else if (pending > 0) {
+    // Some tasks still pending but work is in progress — stay running
+    next = 'running'
   } else if (total > 0 && done === total) {
     next = 'success'
   } else {
