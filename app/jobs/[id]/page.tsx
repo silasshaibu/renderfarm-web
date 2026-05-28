@@ -186,7 +186,7 @@ const ACTIONS: Record<string, ActionDef[]> = {
 }
 
 // ── Per-frame task status ─────────────────────────────────────────────────────
-type TaskStatus = 'done' | 'running' | 'failed' | 'holding' | 'pending' | 'reviewed'
+type TaskStatus = 'done' | 'running' | 'failed' | 'holding' | 'pending' | 'reviewed' | 'preempted'
 
 const DONE_STATUSES     = new Set(['done', 'success', 'downloaded', 'reviewed'])
 const FAILED_STATUSES   = new Set(['failed', 'killed'])
