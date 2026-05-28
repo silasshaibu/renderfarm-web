@@ -182,9 +182,9 @@ export async function POST(req: NextRequest) {
     try {
       const allFrames   = parseFrameRange(data.frames ?? '1-1')
       const appUrl      = process.env.NEXT_PUBLIC_APP_URL ?? 'https://renderfarm-web.vercel.app'
-      const machineType = data.machine_type ?? 'n1-standard-4'
+      const machineType = data.machine_type || 'n1-standard-4'
       const preemptible = data.preemptible  ?? true
-      const software    = data.software     ?? 'blender-4-1'
+      const software    = data.software     || 'blender-4-1'
       // chunk_size and scout_frames may be top-level (Blender addon) or inside manifest (SubmissionKit)
       const chunkSize   = Number(data.chunk_size ?? (data.manifest as Record<string, unknown> | undefined)?.chunk_size ?? 1)
       const useScouts   = data.use_scout_frames ?? true
