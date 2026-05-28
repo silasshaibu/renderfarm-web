@@ -352,14 +352,19 @@ export default function JobDetailPage({ params }: PageProps) {
     return () => { cancelled = true; clearInterval(timer) }
   }, [load])
 
-  // Dismiss context menu on any click or Escape
+  // Dismiss context menu on click, scroll, or Escape
   useEffect(() => {
     if (!ctxMenu) return
     const dismiss = () => setCtxMenu(null)
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCtxMenu(null) }
     window.addEventListener('click', dismiss)
+    window.addEventListener('scroll', dismiss, true)
     window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('click', dismiss); window.removeEventListener('keydown', onKey) }
+    return () => {
+      window.removeEventListener('click', dismiss)
+      window.removeEventListener('scroll', dismiss, true)
+      window.removeEventListener('keydown', onKey)
+    }
   }, [ctxMenu])
 
   const handleAction = async (action: string) => {
