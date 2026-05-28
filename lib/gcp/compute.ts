@@ -124,11 +124,16 @@ nvidia-smi || { echo "ERROR: nvidia-smi failed — GPU driver not ready"; exit 1
   return `#!/bin/bash
 set -e
 ${gpuInit}
-# ── 1. Signal render start immediately (VM is alive, work beginning) ──────────
-curl -s -X POST ${appUrl}/api/gcp/task-start \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer ${internalSecret}" \\
-  -d '{"jobId":"${jobId}","chunkIndex":${chunkIndex},"startFrame":${startFrame},"endFrame":${endFrame}}'
+# ── 1. Signal render start (retry up to 5×, never abort render if it fails) ───
+for _i in 1 2 3 4 5; do
+  _r=$(curl -s -o /dev/null -w "%{http_code}" -X POST ${appUrl}/api/gcp/task-start \\
+    -H "Content-Type: application/json" \\
+    -H "Authorization: Bearer ${internalSecret}" \\
+    -d '{"jobId":"${jobId}","chunkIndex":${chunkIndex},"startFrame":${startFrame},"endFrame":${endFrame}}')
+  [ "$_r" = "200" ] && break
+  echo "task-start attempt $_i failed (HTTP $_r), retrying in 3s..."
+  sleep 3
+done || true
 
 # ── 2. Download scene file from GCS to local disk (fast internal network) ──────
 mkdir -p "${localOutput}"
@@ -147,11 +152,16 @@ echo "Uploading output frames to GCS..."
 gsutil -m cp "${localOutput}/*" "gs://${GCP_BUCKET}/output/${jobId}/"
 echo "Upload complete"
 
-# ── 5. Signal completion back to the API ──────────────────────────────────────
-curl -s -X POST ${appUrl}/api/gcp/task-complete \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer ${internalSecret}" \\
-  -d '{"jobId":"${jobId}","chunkIndex":${chunkIndex},"startFrame":${startFrame},"endFrame":${endFrame},"status":"complete"}'
+# ── 5. Signal completion back to the API (retry up to 5×) ─────────────────────
+for _i in 1 2 3 4 5; do
+  _r=$(curl -s -o /dev/null -w "%{http_code}" -X POST ${appUrl}/api/gcp/task-complete \\
+    -H "Content-Type: application/json" \\
+    -H "Authorization: Bearer ${internalSecret}" \\
+    -d '{"jobId":"${jobId}","chunkIndex":${chunkIndex},"startFrame":${startFrame},"endFrame":${endFrame},"status":"complete"}')
+  [ "$_r" = "200" ] && break
+  echo "task-complete attempt $_i failed (HTTP $_r), retrying in 3s..."
+  sleep 3
+done || true
 
 # ── 6. Clean up local files ────────────────────────────────────────────────────
 rm -f "${localScene}"
