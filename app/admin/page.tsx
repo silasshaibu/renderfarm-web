@@ -635,6 +635,19 @@ function UsersTab() {
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to impersonate') }
   }
 
+  const handleReset2fa = async (u: AdminUser) => {
+    if (!confirm(`Reset 2FA for ${u.email}? They will need to re-enrol next login.`)) return
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+      const res = await fetch(`/api/admin/users/${u.id}/reset-2fa`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error((await res.json() as { message?: string }).message ?? 'Failed')
+      toast.success(`2FA reset for ${u.email}`)
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
+  }
+
   const handleEndImpersonation = () => {
     localStorage.removeItem('rf_token')
     localStorage.removeItem('rf_user')
@@ -707,8 +720,7 @@ function UsersTab() {
           View Audit Log
         </button>
       }>
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div />
+        <div className="flex items-center justify-end mb-3 flex-wrap gap-2">
           <div className="flex items-center gap-3 text-sm text-gray-400">
             <label className="flex items-center gap-1.5">
               Filter:
@@ -794,6 +806,7 @@ function UsersTab() {
                               fn: () => { setSuspendTarget(u); setOpenActions(null) },
                               red: u.status !== 'suspended' },
                             { label: 'Review Abuse Signals',  fn: () => { setAbuseTarget(u);  setOpenActions(null) }, hidden: u.abuseSignals === 0 },
+                            { label: 'Reset 2FA',             fn: () => { handleReset2fa(u);    setOpenActions(null) } },
                             { label: 'Impersonate User',      fn: () => { handleImpersonate(u); setOpenActions(null) }, amber: true },
                           ].filter(x => !x.hidden).map(({ label, fn, red, amber }) => (
                             <button key={label} type="button" onClick={fn}
