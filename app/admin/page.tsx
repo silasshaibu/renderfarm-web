@@ -1195,23 +1195,17 @@ function ProjectsTab() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="jobs-thead-row">
-                {['PROJECT','USERS','JOBS','STORAGE','CREATED','STATUS',''].map(h => (
+                {['PROJECT','STATUS',''].map(h => (
                   <th key={h} className="jobs-th">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {projects.length === 0 ? (
-                <tr><td colSpan={7} className="jobs-td text-center text-gray-600 py-6">No projects found.</td></tr>
+                <tr><td colSpan={3} className="jobs-td text-center text-gray-600 py-6">No projects found.</td></tr>
               ) : projects.map(p => (
                 <tr key={p.id} className="jobs-tbody-row">
                   <td className="jobs-td text-gray-200 font-medium">{p.name}</td>
-                  <td className="jobs-td text-right text-gray-400">{p.users}</td>
-                  <td className="jobs-td text-right text-gray-400">{p.jobs}</td>
-                  <td className="jobs-td text-right font-mono text-gray-400">{(p.storageGb ?? 0).toFixed(1)} GB</td>
-                  <td className="jobs-td text-xs font-mono text-gray-500">
-                    {new Date(p.createdAt).toLocaleDateString('en-US')}
-                  </td>
                   <td className="jobs-td">
                     <span className={[
                       'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border',
