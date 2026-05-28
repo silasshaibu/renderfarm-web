@@ -88,7 +88,6 @@ export default function ShellClient({ children }: { children: React.ReactNode })
           <span className="text-white font-bold text-3xl">Silas</span>
 
           <div className="flex items-center gap-4 text-sm ml-auto">
-            <CreditBadge />
 
             <div className="flex items-center gap-2">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
