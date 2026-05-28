@@ -812,7 +812,10 @@ export default function JobDetailPage({ params }: PageProps) {
                     onClick={() => setSelTask(isSelected ? null : idx)}
                     onContextMenu={e => {
                       e.preventDefault()
-                      setCtxMenu({ x: e.clientX, y: e.clientY, idx, frameNum: sf, status: tStatus })
+                      const MENU_H = 310, MENU_W = 160
+                      const x = e.clientX + MENU_W > window.innerWidth  ? e.clientX - MENU_W : e.clientX
+                      const y = e.clientY + MENU_H > window.innerHeight ? e.clientY - MENU_H : e.clientY
+                      setCtxMenu({ x, y, idx, frameNum: sf, status: tStatus })
                     }}>
 
                     <td className="job-task-td">
