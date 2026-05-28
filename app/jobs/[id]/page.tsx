@@ -209,7 +209,7 @@ function frameStatus(jobStatus: string, frameIdx: number, outputs: string[]): Ta
 }
 
 // Map internal "done" → display "success" to match Conductor labels
-const TASK_STATUS_LABEL: Partial<Record<TaskStatus, string>> = { done: 'success' }
+const TASK_STATUS_LABEL: Partial<Record<TaskStatus, string>> = { done: 'success', complete: 'success' }
 
 function TaskStatusCell({ status }: { status: TaskStatus }) {
   const label = TASK_STATUS_LABEL[status] ?? status
@@ -795,7 +795,6 @@ export default function JobDetailPage({ params }: PageProps) {
                 {TASK_COLUMNS.filter(c => taskVisibleCols.has(c.key)).map(c => (
                   <th key={c.key} className={`job-task-th${c.align ? ' ' + c.align : ''}`}>{c.label}</th>
                 ))}
-                <th className="job-task-th center">ACTION</th>
               </tr>
             </thead>
             <tbody>
@@ -840,37 +839,6 @@ export default function JobDetailPage({ params }: PageProps) {
                         {timing?.costUsd != null ? `$${timing.costUsd.toFixed(2)}` : '—'}
                       </td>
                     )}
-                    <td className="job-task-td center">
-                      {['failed', 'killed', 'preempted'].includes(tStatus) && (
-                        <div className="flex flex-col items-center gap-0.5">
-                          <button
-                            type="button"
-                            title={taskErrors[idx] ?? 'Retry this chunk on a new VM'}
-                            disabled={retryingTasks.has(idx)}
-                            onClick={e => { e.stopPropagation(); handleTaskAction('retry', idx) }}
-                            className="task-retry-btn">
-                            {retryingTasks.has(idx) ? (
-                              <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24"
-                                fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-                              </svg>
-                            ) : (
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                                stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                                <polyline points="1 4 1 10 7 10"/>
-                                <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
-                              </svg>
-                            )}
-                            <span className="sr-only">Retry chunk {idx}</span>
-                          </button>
-                          {taskErrors[idx] && (
-                            <span className="text-red-400 text-[10px] leading-tight max-w-[80px] text-center">
-                              {taskErrors[idx]}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
                   </tr>
                 )
               })}
