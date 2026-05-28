@@ -177,7 +177,7 @@ const ACTIONS: Record<string, ActionDef[]> = {
   syncing:        [KILL],
   pending:        [HOLD, KILL],
   holding:        [UNHOLD, KILL],
-  running:        [HOLD, KILL],
+  running:        [KILL],
   success:        [],
   downloaded:     [],
   failed:         [RETRY],
@@ -808,7 +808,7 @@ export default function JobDetailPage({ params }: PageProps) {
 
         // Enabled rules per action — matches Conductor behaviour
         const enabled: Record<string, boolean> = {
-          hold:            active(['pending','running','queued']),
+          hold:            active(['pending','queued']),
           kill:            active(['pending','running','holding','queued']),
           retry:           !active(['done','complete','success']),
           'retry-failed':  s === 'failed',
