@@ -582,7 +582,6 @@ function UsersTab() {
   const [suspendTarget,   setSuspendTarget]   = useState<AdminUser | null>(null)
   const [showAuditLog,    setShowAuditLog]    = useState(false)
   const [impersonating,   setImpersonating]   = useState<{ email: string } | null>(null)
-  const [overview,        setOverview]        = useState<{ totalIssued: number; totalConsumed: number; outstanding: number; pendingAbuse: number } | null>(null)
   const [openActions,     setOpenActions]     = useState<string | null>(null)
 
   const { data: apiUsers, loading, refetch } = useApiFetch(() => adminApi.users())
@@ -594,9 +593,6 @@ function UsersTab() {
     fetch('/api/wrangler-settings', { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then((s: Record<string, unknown> | null) => { if (s?.require2fa !== undefined) setRequire2fa(Boolean(s.require2fa)) })
-      .catch(() => null)
-    adminApi.creditsOverview()
-      .then(d => setOverview(d as typeof overview))
       .catch(() => null)
   }, [])
 
@@ -669,22 +665,6 @@ function UsersTab() {
       {suspendTarget && <SuspendModal      user={suspendTarget} onClose={() => setSuspendTarget(null)} onRefresh={refetch} />}
       {showAuditLog  && <AuditLogModal     onClose={() => setShowAuditLog(false)} />}
 
-      {/* Credits Overview Cards */}
-      {overview && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          {[
-            { label: 'Credits Issued',    value: `$${overview.totalIssued.toFixed(2)}` },
-            { label: 'Credits Consumed',  value: `$${overview.totalConsumed.toFixed(2)}` },
-            { label: 'Outstanding',       value: `$${overview.outstanding.toFixed(2)}` },
-            { label: 'Pending Review',    value: String(overview.pendingAbuse), highlight: overview.pendingAbuse > 0 },
-          ].map(({ label, value, highlight }) => (
-            <div key={label} className="admin-section-box text-center py-3">
-              <p className={`text-xl font-bold ${highlight ? 'text-amber-400' : 'text-white'}`}>{value}</p>
-              <p className="text-xs text-gray-500 mt-1">{label}</p>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* 2FA Setting */}
       <SectionBox title="Account Security Settings">
