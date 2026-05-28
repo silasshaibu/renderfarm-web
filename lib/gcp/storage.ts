@@ -50,7 +50,7 @@ export async function getSignedDownloadUrls(jobId: string): Promise<string[]> {
         .file(filePath)
         .getSignedUrl({
           action:  'read',
-          expires: Date.now() + 60 * 60 * 1000, // 1 hour
+          expires: Date.now() + 6 * 60 * 60 * 1000, // 6 hours
         })
       return url
     })

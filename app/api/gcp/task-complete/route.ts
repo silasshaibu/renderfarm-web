@@ -65,9 +65,11 @@ export async function POST(req: NextRequest) {
     `
   }
 
-  // All frames done → mark job success and attach signed download URLs
+  // Always refresh outputs so partial frames are downloadable while running
+  const outputs = await getSignedDownloadUrls(jobId)
+
   if (doneCount >= totalFrames) {
-    const outputs = await getSignedDownloadUrls(jobId)
+    // All frames done → mark success
     await sql`
       UPDATE jobs
       SET status     = 'success',
@@ -76,6 +78,15 @@ export async function POST(req: NextRequest) {
       WHERE id = ${jobId}
     `
     console.log(`Job ${jobId} complete — ${outputs.length} frames`)
+  } else if (outputs.length) {
+    // Partial completion — write available URLs so downloader can grab them now
+    await sql`
+      UPDATE jobs
+      SET outputs    = ${JSON.stringify(outputs)}::jsonb,
+          updated_at = NOW()
+      WHERE id = ${jobId}
+    `
+    console.log(`Job ${jobId} partial — ${doneCount}/${totalFrames} frames, ${outputs.length} URLs written`)
   }
 
   return NextResponse.json({ ok: true })
