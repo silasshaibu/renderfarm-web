@@ -831,7 +831,7 @@ export default function JobDetailPage({ params }: PageProps) {
                     {taskVisibleCols.has('end_time')   && <td className="job-task-td right text-gray-400">{fmtTime(timing?.completedAt ?? null)}</td>}
                     {taskVisibleCols.has('cost')       && (
                       <td className="job-task-td right text-gray-400">
-                        {timing?.costUsd != null ? `$${timing.costUsd.toFixed(4)}` : '—'}
+                        {timing?.costUsd != null ? `$${timing.costUsd.toFixed(2)}` : '—'}
                       </td>
                     )}
                     <td className="job-task-td center">
