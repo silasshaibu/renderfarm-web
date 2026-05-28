@@ -455,8 +455,8 @@ export default function JobDetailPage({ params }: PageProps) {
     const end   = parts.length > 1 ? parseInt(parts[1]) || start : start
     const total = Math.max(1, end - start + 1)
     const done  = job?.outputs?.length ?? 0
-    const pct   = DONE_STATUSES.has(job?.status ?? '')  ? 100
-                : job?.status === 'running'              ? Math.round((done / total) * 100)
+    const pct   = DONE_STATUSES.has(job?.status ?? '') ? 100
+                : done > 0                              ? Math.round((done / total) * 100)
                 : 0
     return { frames: str, start, end, total, done, pct }
   }, [job])
@@ -680,19 +680,6 @@ export default function JobDetailPage({ params }: PageProps) {
             <span>Render progress</span>
             <div className="flex items-center gap-3">
               <span>{done} / {total} frames ({pct}%)</span>
-              {/* Scout Frames button — only on jobs that aren't done yet */}
-              {!['success','downloaded','done','failed'].includes(job.status) && total > 1 && (
-                <button type="button"
-                  className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 transition-colors"
-                  onClick={() => { setScoutCreated(''); setShowScout(true) }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                  </svg>
-                  Scout Frames
-                </button>
-              )}
-              {/* Downloads handled by the Electron Companion App — no browser download button */}
             </div>
           </div>
           <progress
@@ -743,7 +730,6 @@ export default function JobDetailPage({ params }: PageProps) {
                 <th className="job-task-th">TASK ID</th>
                 <th className="job-task-th">FRAMES</th>
                 <th className="job-task-th">STATUS</th>
-                <th className="job-task-th center">SCOUT</th>
                 <th className="job-task-th right">CORES</th>
                 <th className="job-task-th right">MEMORY</th>
                 <th className="job-task-th center">PREEMPTIBLE</th>
@@ -783,9 +769,6 @@ export default function JobDetailPage({ params }: PageProps) {
                     </td>
                     <td className="job-task-td">{frameLabel}</td>
                     <td className="job-task-td"><TaskStatusCell status={tStatus} /></td>
-                    <td className="job-task-td center">
-                      {timing?.isScout && <ScoutBadge />}
-                    </td>
                     <td className="job-task-td right">{taskCores}</td>
                     <td className="job-task-td right">{taskMemoryGB} GB</td>
                     <td className="job-task-td center text-gray-400">
