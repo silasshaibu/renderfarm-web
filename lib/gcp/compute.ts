@@ -157,7 +157,7 @@ for _i in 1 2 3 4 5; do
   _r=$(curl -s -o /dev/null -w "%{http_code}" -X POST ${appUrl}/api/gcp/task-complete \\
     -H "Content-Type: application/json" \\
     -H "Authorization: Bearer ${internalSecret}" \\
-    -d '{"jobId":"${jobId}","chunkIndex":${chunkIndex},"startFrame":${startFrame},"endFrame":${endFrame},"status":"complete"}')
+    -d '{"jobId":"${jobId}","chunkIndex":${chunkIndex},"startFrame":${startFrame},"endFrame":${endFrame},"status":"complete","machineType":"${config.machineType}"}')
   [ "$_r" = "200" ] && break
   echo "task-complete attempt $_i failed (HTTP $_r), retrying in 3s..."
   sleep 3
