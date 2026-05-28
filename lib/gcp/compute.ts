@@ -100,28 +100,52 @@ nvidia-smi || { echo "ERROR: nvidia-smi failed — GPU driver not ready"; exit 1
   -f ${startFrame} \\
   -F PNG`
 
+  // Local paths — all work done on fast local NVMe disk
+  const localScene  = `/tmp/scene_${jobId}_${chunkIndex}.blend`
+  const localOutput = `/tmp/output_${jobId}_${chunkIndex}`
+
+  // Rewrite render command to use local paths
+  const renderCmdLocal = isMultiFrame
+    ? `${blender} -b "${localScene}" \\
+  --python-expr "import bpy; bpy.context.scene.cycles.use_denoising = False" \\
+  -E CYCLES \\
+  ${cyclesDevice} \\
+  -o "${localOutput}/####" \\
+  -s ${startFrame} -e ${endFrame} \\
+  -F PNG -a`
+    : `${blender} -b "${localScene}" \\
+  --python-expr "import bpy; bpy.context.scene.cycles.use_denoising = False" \\
+  -E CYCLES \\
+  ${cyclesDevice} \\
+  -o "${localOutput}/####" \\
+  -f ${startFrame} \\
+  -F PNG`
+
   return `#!/bin/bash
 set -e
 ${gpuInit}
-# ── 1. Mount GCS bucket ────────────────────────────────────────────────────────
-mkdir -p /mnt/render
-gcsfuse --implicit-dirs ${GCP_BUCKET} /mnt/render
-echo "GCS bucket mounted"
+# ── 1. Download scene file from GCS to local disk (fast internal network) ──────
+mkdir -p "${localOutput}"
+echo "Downloading scene: gs://${GCP_BUCKET}/${gcsScenePath}"
+gsutil cp "gs://${GCP_BUCKET}/${gcsScenePath}" "${localScene}"
+echo "Scene downloaded: $(du -sh ${localScene} | cut -f1)"
 
-# ── 2. Create output directory ─────────────────────────────────────────────────
-mkdir -p ${outputPath}
-
-# ── 3. Signal render start ────────────────────────────────────────────────────
+# ── 2. Signal render start ────────────────────────────────────────────────────
 curl -s -X POST ${appUrl}/api/gcp/task-start \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${internalSecret}" \\
   -d '{"jobId":"${jobId}","chunkIndex":${chunkIndex},"startFrame":${startFrame},"endFrame":${endFrame}}'
 
-# ── 4. Run Blender render (frames ${startFrame}–${endFrame}) ─────────────────
+# ── 3. Run Blender render on local disk (frames ${startFrame}–${endFrame}) ────
 echo "Rendering job=${jobId} chunk=${chunkIndex} frames=${startFrame}-${endFrame} software=${software} gpu=${useGpu}"
 echo "Using Blender binary: ${blender}"
-${renderCmd}
+${renderCmdLocal}
 echo "Render complete: frames ${startFrame}-${endFrame}"
+
+# ── 4. Upload rendered frames to GCS ─────────────────────────────────────────
+echo "Uploading output frames to GCS..."
+gsutil -m cp "${localOutput}/*" "gs://${GCP_BUCKET}/output/${jobId}/"
+echo "Upload complete"
 
 # ── 5. Signal completion back to the API ──────────────────────────────────────
 curl -s -X POST ${appUrl}/api/gcp/task-complete \\
@@ -129,7 +153,11 @@ curl -s -X POST ${appUrl}/api/gcp/task-complete \\
   -H "Authorization: Bearer ${internalSecret}" \\
   -d '{"jobId":"${jobId}","chunkIndex":${chunkIndex},"startFrame":${startFrame},"endFrame":${endFrame},"status":"complete"}'
 
-# ── 6. Self-delete this VM (billing stops immediately) ────────────────────────
+# ── 6. Clean up local files ────────────────────────────────────────────────────
+rm -f "${localScene}"
+rm -rf "${localOutput}"
+
+# ── 7. Self-delete this VM (billing stops immediately) ────────────────────────
 INSTANCE_NAME=$(curl -s "http://metadata.google.internal/computeMetadata/v1/instance/name" -H "Metadata-Flavor: Google")
 ZONE=$(curl -s "http://metadata.google.internal/computeMetadata/v1/instance/zone" -H "Metadata-Flavor: Google" | awk -F/ '{print $NF}')
 gcloud compute instances delete "$INSTANCE_NAME" --zone="$ZONE" --quiet
