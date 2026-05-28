@@ -190,7 +190,7 @@ const ACTIONS: Record<string, ActionDef[]> = {
 }
 
 // ── Per-frame task status ─────────────────────────────────────────────────────
-type TaskStatus = 'done' | 'running' | 'failed' | 'holding' | 'pending' | 'reviewed' | 'preempted' | 'held'
+type TaskStatus = 'done' | 'complete' | 'success' | 'running' | 'failed' | 'holding' | 'pending' | 'reviewed' | 'preempted' | 'held'
 
 const DONE_STATUSES     = new Set(['done', 'success', 'complete', 'downloaded', 'reviewed'])
 const FAILED_STATUSES   = new Set(['failed', 'killed'])
@@ -209,7 +209,7 @@ function frameStatus(jobStatus: string, frameIdx: number, outputs: string[]): Ta
 }
 
 // Map internal "done" → display "success" to match Conductor labels
-const TASK_STATUS_LABEL: Partial<Record<TaskStatus, string>> = { done: 'success', complete: 'success' }
+const TASK_STATUS_LABEL: Partial<Record<TaskStatus, string>> = { done: 'success', complete: 'success', success: 'success' }
 
 function TaskStatusCell({ status }: { status: TaskStatus }) {
   const label = TASK_STATUS_LABEL[status] ?? status
