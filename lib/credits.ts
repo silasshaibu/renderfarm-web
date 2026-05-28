@@ -1,12 +1,12 @@
 /**
  * lib/credits.ts — Credit system utilities.
  *
- * Each user starts with 50 free welcome credits.
+ * Each user starts with 25 free welcome credits.
  * Credits are consumed as jobs render (negative entries).
  * Balance = SUM(amount) for a given user.
  *
  * Account deletion is disabled to prevent users from deleting and
- * recreating accounts to claim the $50 welcome bonus multiple times.
+ * recreating accounts to claim the $25 welcome bonus multiple times.
  * Only admins can deactivate accounts via /admin/users.
  */
 import { sql } from './db'
@@ -135,9 +135,9 @@ export async function grantWelcomeBonus(userId: number, email: string, firstName
 
   await addCredit({
     userId,
-    amount:      50,
+    amount:      25,
     type:        'welcome_bonus',
-    description: 'Welcome bonus — 50 free credits',
+    description: 'Welcome bonus — 25 free credits',
   })
   await sql`UPDATE users SET welcome_bonus_claimed = TRUE WHERE id = ${userId}`
 
@@ -145,13 +145,13 @@ export async function grantWelcomeBonus(userId: number, email: string, firstName
   const dashUrl = `${baseUrl()}/`
   sendEmail({
     to:      email,
-    subject: 'Welcome to Renderfarm — You have 50 free credits!',
+    subject: 'Welcome to Renderfarm — You have 25 free credits!',
     html: `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#e2e8f0;background:#0f1117;padding:32px;border-radius:8px">
         <h2 style="color:#fff;margin-bottom:8px">Welcome, ${firstName}!</h2>
         <p style="color:#94a3b8">Your Renderfarm account is ready.</p>
         <div style="background:#1e2433;border-radius:8px;padding:20px;margin:20px 0;text-align:center">
-          <p style="font-size:32px;font-weight:bold;color:#3b82f6;margin:0">$50.00</p>
+          <p style="font-size:32px;font-weight:bold;color:#3b82f6;margin:0">$25.00</p>
           <p style="color:#94a3b8;margin:4px 0 0">Free render credits added to your account</p>
         </div>
         <p style="color:#94a3b8">Credits are used automatically when you submit render jobs. Each credit = $1 of render time.</p>

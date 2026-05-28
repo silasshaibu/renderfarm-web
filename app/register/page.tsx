@@ -22,7 +22,7 @@ function OnboardingScreen({ firstName, bonusPending, onDashboard }: {
           </p>
         ) : (
           <p className={s.onboardingSubtitle}>
-            Your account is ready and <strong className={s.creditHighlight}>$50 in free credits</strong> have been added to get you started.
+            Your account is ready and <strong className={s.creditHighlight}>$25 in free credits</strong> have been added to get you started.
           </p>
         )}
         <ul className={s.onboardingList}>
@@ -322,7 +322,7 @@ export default function RegisterPage() {
             </div>
 
             {/* Credit promo */}
-            <p className={s.creditPromo}>New accounts receive $50 in free render credits!</p>
+            <p className={s.creditPromo}>New accounts receive $25 in free render credits!</p>
 
             {/* Submit */}
             <button type="submit" disabled={!canSubmit || loading} className={s.submitBtn}>
