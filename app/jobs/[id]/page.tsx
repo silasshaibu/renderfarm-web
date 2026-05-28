@@ -233,6 +233,55 @@ function ScoutBadge() {
   )
 }
 
+// ── Task table column config ──────────────────────────────────────────────────
+type TaskColKey = 'frames' | 'status' | 'cores' | 'memory' | 'preemptible' | 'elapsed' | 'start_time' | 'end_time' | 'cost'
+
+const TASK_COLUMNS: { key: TaskColKey; label: string; align?: string }[] = [
+  { key: 'frames',      label: 'FRAMES' },
+  { key: 'status',      label: 'STATUS' },
+  { key: 'cores',       label: 'CORES',       align: 'right' },
+  { key: 'memory',      label: 'MEMORY',      align: 'right' },
+  { key: 'preemptible', label: 'PREEMPTIBLE', align: 'center' },
+  { key: 'elapsed',     label: 'ELAPSED',     align: 'right' },
+  { key: 'start_time',  label: 'START TIME',  align: 'right' },
+  { key: 'end_time',    label: 'END TIME',    align: 'right' },
+  { key: 'cost',        label: 'COST',        align: 'right' },
+]
+
+const TASK_COL_BTN_ICON = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+    <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>
+    <line x1="15" y1="3" x2="15" y2="21"/>
+  </svg>
+)
+
+function TaskColumnsPopover({ visible, onToggle }: { visible: Set<TaskColKey>; onToggle: (k: TaskColKey) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative">
+      <button type="button" aria-expanded={open} className="col-popover-btn" onClick={() => setOpen(o => !o)}>
+        {TASK_COL_BTN_ICON} Columns
+      </button>
+      {open && (
+        <div className="col-popover-panel">
+          {TASK_COLUMNS.map(col => (
+            <label key={col.key} className="col-popover-item">
+              <input
+                type="checkbox"
+                className="col-popover-check"
+                checked={visible.has(col.key)}
+                onChange={() => onToggle(col.key)}
+              />
+              {col.label}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page props ────────────────────────────────────────────────────────────────
 interface PageProps { params: Promise<{ id: string }> }
 const TASK_PAGE_SIZE = 10
@@ -257,6 +306,12 @@ export default function JobDetailPage({ params }: PageProps) {
   const [scoutCreated,    setScoutCreated]    = useState('')
   const [approvingScouts, setApprovingScouts] = useState(false)
   const [approveMsg,      setApproveMsg]      = useState('')
+  const [taskVisibleCols, setTaskVisibleCols] = useState<Set<TaskColKey>>(
+    new Set(TASK_COLUMNS.map(c => c.key)) // all columns visible by default
+  )
+  const toggleTaskCol = useCallback((k: TaskColKey) => {
+    setTaskVisibleCols(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n })
+  }, [])
 
   const loadTimings = useCallback(async (jobId: string) => {
     try {
@@ -701,9 +756,12 @@ export default function JobDetailPage({ params }: PageProps) {
               </span>
             )}
           </h3>
-          <span className="text-xs text-gray-500">
-            Showing {taskStart + 1}–{taskEnd} of {taskRowCount}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500">
+              Showing {taskStart + 1}–{taskEnd} of {taskRowCount}
+            </span>
+            <TaskColumnsPopover visible={taskVisibleCols} onToggle={toggleTaskCol} />
+          </div>
         </div>
 
         {/* Approve Scout Frames banner */}
@@ -728,15 +786,9 @@ export default function JobDetailPage({ params }: PageProps) {
             <thead>
               <tr>
                 <th className="job-task-th">TASK ID</th>
-                <th className="job-task-th">FRAMES</th>
-                <th className="job-task-th">STATUS</th>
-                <th className="job-task-th right">CORES</th>
-                <th className="job-task-th right">MEMORY</th>
-                <th className="job-task-th center">PREEMPTIBLE</th>
-                <th className="job-task-th right">ELAPSED</th>
-                <th className="job-task-th right">START TIME</th>
-                <th className="job-task-th right">END TIME</th>
-                <th className="job-task-th right">COST</th>
+                {TASK_COLUMNS.filter(c => taskVisibleCols.has(c.key)).map(c => (
+                  <th key={c.key} className={`job-task-th${c.align ? ' ' + c.align : ''}`}>{c.label}</th>
+                ))}
                 <th className="job-task-th center">ACTION</th>
               </tr>
             </thead>
@@ -767,19 +819,21 @@ export default function JobDetailPage({ params }: PageProps) {
                         {padTask(idx)}
                       </Link>
                     </td>
-                    <td className="job-task-td">{frameLabel}</td>
-                    <td className="job-task-td"><TaskStatusCell status={tStatus} /></td>
-                    <td className="job-task-td right">{taskCores}</td>
-                    <td className="job-task-td right">{taskMemoryGB} GB</td>
-                    <td className="job-task-td center text-gray-400">
-                      {isPreemptible ? '✓' : '—'}
-                    </td>
-                    <td className="job-task-td right text-gray-400">{fmtDuration(timing?.durationSec ?? null)}</td>
-                    <td className="job-task-td right text-gray-400">{fmtTime(timing?.startedAt ?? null)}</td>
-                    <td className="job-task-td right text-gray-400">{fmtTime(timing?.completedAt ?? null)}</td>
-                    <td className="job-task-td right text-gray-400">
-                      {timing?.costUsd != null ? `$${timing.costUsd.toFixed(4)}` : '—'}
-                    </td>
+                    {taskVisibleCols.has('frames')      && <td className="job-task-td">{frameLabel}</td>}
+                    {taskVisibleCols.has('status')      && <td className="job-task-td"><TaskStatusCell status={tStatus} /></td>}
+                    {taskVisibleCols.has('cores')       && <td className="job-task-td right">{taskCores}</td>}
+                    {taskVisibleCols.has('memory')      && <td className="job-task-td right">{taskMemoryGB} GB</td>}
+                    {taskVisibleCols.has('preemptible') && (
+                      <td className="job-task-td center text-gray-400">{isPreemptible ? '✓' : '—'}</td>
+                    )}
+                    {taskVisibleCols.has('elapsed')    && <td className="job-task-td right text-gray-400">{fmtDuration(timing?.durationSec ?? null)}</td>}
+                    {taskVisibleCols.has('start_time') && <td className="job-task-td right text-gray-400">{fmtTime(timing?.startedAt ?? null)}</td>}
+                    {taskVisibleCols.has('end_time')   && <td className="job-task-td right text-gray-400">{fmtTime(timing?.completedAt ?? null)}</td>}
+                    {taskVisibleCols.has('cost')       && (
+                      <td className="job-task-td right text-gray-400">
+                        {timing?.costUsd != null ? `$${timing.costUsd.toFixed(4)}` : '—'}
+                      </td>
+                    )}
                     <td className="job-task-td center">
                       {['failed', 'killed', 'preempted'].includes(tStatus) && (
                         <div className="flex flex-col items-center gap-0.5">
