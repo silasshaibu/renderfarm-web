@@ -9,10 +9,13 @@ export async function GET(req: NextRequest) {
   if (!user || !user.isAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 
   await initDB()
+  await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'dashboard'`.catch(() => null)
+  await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ DEFAULT NULL`.catch(() => null)
 
   const rows = await sql`
     SELECT
       s.id, s.ip_address, s.user_agent, s.created_at, s.expires_at,
+      s.source, s.last_used_at,
       u.id    AS user_id,
       u.email AS user_email,
       u.name  AS user_name
@@ -25,11 +28,13 @@ export async function GET(req: NextRequest) {
   ` as Record<string, unknown>[]
 
   return NextResponse.json(rows.map(r => ({
-    id:        r.id,
-    ip:        r.ip_address ?? '',
-    userAgent: r.user_agent ?? '',
-    createdAt: r.created_at,
-    expiresAt: r.expires_at,
+    id:         String(r.id),
+    ip:         r.ip_address ?? '',
+    userAgent:  r.user_agent ?? '',
+    createdAt:  r.created_at,
+    expiresAt:  r.expires_at,
+    lastUsedAt: r.last_used_at ?? null,
+    source:     (r.source as string) || 'dashboard',
     user: {
       id:    String(r.user_id),
       email: r.user_email,

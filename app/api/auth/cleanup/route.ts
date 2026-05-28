@@ -7,14 +7,16 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { sql, initDB } from '@/lib/db'
+import { verifyToken } from '@/lib/auth-server'
 
 const CRON_SECRET = process.env.CRON_SECRET ?? ''
 
 export async function GET(req: NextRequest) {
-  // Protect against arbitrary callers; Vercel cron passes the secret automatically
-  // when set via CRON_SECRET env var. Also allow internal calls with no auth in dev.
+  // Allow: Vercel cron with CRON_SECRET header, OR an authenticated admin user
   const auth = req.headers.get('authorization') ?? ''
-  if (CRON_SECRET && auth !== `Bearer ${CRON_SECRET}`) {
+  const isCron  = CRON_SECRET ? auth === `Bearer ${CRON_SECRET}` : true
+  const isAdmin = !isCron ? await verifyToken(req).then(u => u?.isAdmin ?? false).catch(() => false) : false
+  if (!isCron && !isAdmin) {
     return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
   }
 

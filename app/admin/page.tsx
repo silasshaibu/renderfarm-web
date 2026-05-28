@@ -1243,13 +1243,22 @@ interface ApiSession {
   ip: string | null
   createdAt: string
   expiresAt: string
+  lastUsedAt: string | null
+  source: 'dashboard' | 'addon' | 'api'
+}
+
+const SESSION_SOURCE_STYLES: Record<string, string> = {
+  dashboard: 'bg-blue-900/40 text-blue-300 border-blue-700/40',
+  addon:     'bg-purple-900/40 text-purple-300 border-purple-700/40',
+  api:       'bg-gray-700/40 text-gray-400 border-gray-600/40',
 }
 
 function SessionsTab() {
   const toast = useToast()
   const { data: apiSessions, loading, refetch, syncing } = useApiFetch(() => adminApi.sessions())
   const sessions: ApiSession[] = (apiSessions as ApiSession[] | null) ?? []
-  const [deleting, setDeleting] = useState<string | null>(null)
+  const [deleting,  setDeleting]  = useState<string | null>(null)
+  const [cleaning,  setCleaning]  = useState(false)
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -1266,11 +1275,23 @@ function SessionsTab() {
     finally { setDeleting(null) }
   }
 
+  const handleCleanUp = async () => {
+    setCleaning(true)
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+      const res = await fetch('/api/auth/cleanup', { headers: { Authorization: `Bearer ${token}` } })
+      const d = await res.json() as { expiredDeleted?: number; duplicatesRemoved?: number }
+      toast.success(`Cleaned up: ${d.expiredDeleted ?? 0} expired, ${d.duplicatesRemoved ?? 0} duplicate sessions removed`)
+      await refetch()
+    } catch { toast.error('Cleanup failed') }
+    finally { setCleaning(false) }
+  }
+
   const fmt = (iso: string) => {
     try {
       return new Date(iso).toLocaleString([], {
         month: 'numeric', day: 'numeric', year: 'numeric',
-        hour: 'numeric', minute: '2-digit', second: '2-digit',
+        hour: 'numeric', minute: '2-digit',
       })
     } catch { return iso }
   }
@@ -1281,6 +1302,10 @@ function SessionsTab() {
         <h3 className="text-sm font-semibold text-gray-200">Active Sessions</h3>
         <div className="flex items-center gap-3">
           {syncing && <span className="text-xs text-gray-500">Refreshing…</span>}
+          <button type="button" onClick={handleCleanUp} disabled={cleaning}
+            className="text-xs px-3 py-1.5 rounded border border-amber-500/30 text-amber-400 hover:border-amber-500/60 hover:text-amber-300 transition-colors disabled:opacity-50">
+            {cleaning ? 'Cleaning…' : 'Clean Up Duplicates'}
+          </button>
           <GrayBtn label="Refresh" onClick={() => refetch()} />
         </div>
       </div>
@@ -1291,20 +1316,25 @@ function SessionsTab() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="jobs-thead-row">
-                {['USER','IP ADDRESS','CREATED','EXPIRES',''].map(h => (
+                {['USER','IP ADDRESS','SOURCE','CREATED','EXPIRES',''].map(h => (
                   <th key={h} className="jobs-th">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {sessions.length === 0 ? (
-                <tr><td colSpan={5} className="jobs-td text-center text-gray-600 py-6">No active sessions.</td></tr>
+                <tr><td colSpan={6} className="jobs-td text-center text-gray-600 py-6">No active sessions.</td></tr>
               ) : sessions.map(s => (
                 <tr key={s.id} className="jobs-tbody-row">
                   <td className="jobs-td font-mono text-xs text-gray-300">{s.user?.email ?? '—'}</td>
                   <td className="jobs-td font-mono text-xs text-gray-400">{s.ip ?? '—'}</td>
-                  <td className="jobs-td text-xs text-gray-400">{fmt(s.createdAt)}</td>
-                  <td className="jobs-td text-xs text-gray-400">{fmt(s.expiresAt)}</td>
+                  <td className="jobs-td">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap ${SESSION_SOURCE_STYLES[s.source] ?? SESSION_SOURCE_STYLES.api}`}>
+                      {s.source ?? 'dashboard'}
+                    </span>
+                  </td>
+                  <td className="jobs-td text-xs text-gray-400 whitespace-nowrap">{fmt(s.createdAt)}</td>
+                  <td className="jobs-td text-xs text-gray-400 whitespace-nowrap">{fmt(s.expiresAt)}</td>
                   <td className="jobs-td">
                     <GrayBtn label={deleting === s.id ? '…' : 'Delete'}
                       disabled={deleting === s.id}
@@ -1316,7 +1346,7 @@ function SessionsTab() {
           </table>
         </div>
       )}
-      <p className="text-xs text-gray-600 mt-3">Auto-refreshes every 30 seconds.</p>
+      <p className="text-xs text-gray-600 mt-3">Auto-refreshes every 30 seconds. Cleanup also runs automatically every hour.</p>
     </div>
   )
 }
