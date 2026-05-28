@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sql, initDB } from '@/lib/db'
 import { INTERNAL_SECRET } from '@/lib/gcp/clients'
+import { syncJobStatus } from '@/lib/jobs/sync'
 
 // POST { jobId, frame }
 // Called by the VM startup script just before Blender starts rendering.
@@ -15,9 +16,10 @@ export async function POST(req: NextRequest) {
 
   const { jobId, frame } = await req.json() as { jobId: string; frame: number }
 
-  const jobRows = await sql`SELECT id FROM jobs WHERE id = ${jobId} LIMIT 1`
+  const jobRows = await sql`SELECT id, status FROM jobs WHERE id = ${jobId} LIMIT 1`
   if (!jobRows.length) return NextResponse.json({ ok: true })
-  const jobIdInt = Number((jobRows[0] as Record<string, unknown>).id)
+  const job      = jobRows[0] as Record<string, unknown>
+  const jobIdInt = Number(job.id)
 
   await sql`
     INSERT INTO tasks (job_id, frame_index, frame_number, status, started_at)
@@ -25,6 +27,9 @@ export async function POST(req: NextRequest) {
     ON CONFLICT (job_id, frame_index)
     DO UPDATE SET status = 'running', started_at = NOW()
   `
+
+  // Sync job status — at least 1 task is now running → job becomes 'running'
+  await syncJobStatus(jobIdInt, jobId, job.status as string)
 
   return NextResponse.json({ ok: true })
 }

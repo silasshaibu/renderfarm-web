@@ -3,6 +3,7 @@ import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 import { killTaskVM } from '@/lib/gcp/compute'
 import { parseFrameRange } from '@/lib/utils/frames'
+import { syncJobStatus } from '@/lib/jobs/sync'
 
 type Context = { params: Promise<{ jobNumber: string; taskId: string }> }
 
@@ -41,6 +42,11 @@ export async function POST(req: NextRequest, context: Context) {
     ON CONFLICT (job_id, frame_index)
     DO UPDATE SET status = 'killed', completed_at = NOW()
   `
+
+  // Recompute job status — killing a running task may mean no VMs left
+  const jobIdInt = Number(job.id)
+  const jobStatusRow = await sql`SELECT status FROM jobs WHERE id = ${job.id} LIMIT 1`
+  await syncJobStatus(jobIdInt, String(job.id), (jobStatusRow[0] as Record<string, unknown>).status as string)
 
   return NextResponse.json({ ok: true, frameNumber, status: 'killed' })
 }

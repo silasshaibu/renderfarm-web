@@ -3,6 +3,7 @@ import { sql, initDB } from '@/lib/db'
 import { INTERNAL_SECRET } from '@/lib/gcp/clients'
 import { getSignedDownloadUrls } from '@/lib/gcp/storage'
 import { spawnJobVMs } from '@/lib/gcp/compute'
+import { syncJobStatus } from '@/lib/jobs/sync'
 
 // POST { jobId, frame, status }
 // Called by the VM startup script when a frame finishes rendering.
@@ -68,25 +69,25 @@ export async function POST(req: NextRequest) {
   // Always refresh outputs so partial frames are downloadable while running
   const outputs = await getSignedDownloadUrls(jobId)
 
-  if (doneCount >= totalFrames) {
-    // All frames done → mark success
+  if (outputs.length) {
     await sql`
       UPDATE jobs
-      SET status     = 'success',
-          outputs    = ${JSON.stringify(outputs)}::jsonb,
-          updated_at = NOW()
+      SET outputs = ${JSON.stringify(outputs)}::jsonb, updated_at = NOW()
       WHERE id = ${jobId}
+    `
+  }
+
+  if (doneCount >= totalFrames) {
+    // All frames done — force success regardless of syncJobStatus
+    await sql`
+      UPDATE jobs SET status = 'success', updated_at = NOW() WHERE id = ${jobId}
     `
     console.log(`Job ${jobId} complete — ${outputs.length} frames`)
-  } else if (outputs.length) {
-    // Partial completion — write available URLs so downloader can grab them now
-    await sql`
-      UPDATE jobs
-      SET outputs    = ${JSON.stringify(outputs)}::jsonb,
-          updated_at = NOW()
-      WHERE id = ${jobId}
-    `
-    console.log(`Job ${jobId} partial — ${doneCount}/${totalFrames} frames, ${outputs.length} URLs written`)
+  } else {
+    // Recompute job status from actual task states (running/pending/holding)
+    const jobRow = await sql`SELECT status FROM jobs WHERE id = ${jobId} LIMIT 1`
+    const currentStatus = (jobRow[0] as Record<string, unknown>).status as string
+    await syncJobStatus(jobIdInt, jobId, currentStatus)
   }
 
   return NextResponse.json({ ok: true })
