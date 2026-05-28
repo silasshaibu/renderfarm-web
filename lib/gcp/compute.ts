@@ -1,12 +1,16 @@
 import { computeClient, GCP_PROJECT, GCP_ZONE, RENDER_IMAGE, GCP_BUCKET } from './clients'
 
 export interface RenderTaskConfig {
-  jobId      : string
-  frameNumber: number
+  jobId       : string
+  chunkIndex  : number   // 0-based task/chunk index
+  startFrame  : number   // first frame in chunk
+  endFrame    : number   // last frame in chunk (== startFrame for chunk_size=1)
   gcsScenePath: string   // e.g. jobs/abc123/scene.blend
   machineType : string   // GCP machine type string — see MACHINE_TYPE_MAP
   preemptible : boolean
   software    : string   // e.g. 'blender-4-1' — maps to /opt/blender/blender-4-1/blender
+  // Legacy single-frame compat — derived from startFrame when not provided
+  frameNumber?: number
 }
 
 /**
@@ -64,25 +68,37 @@ const MACHINE_TYPE_MAP: Record<string, {
  * VM boots → mounts GCS → runs Blender → writes output → calls task-complete → self-deletes.
  */
 function buildStartupScript(
-  config      : RenderTaskConfig,
-  appUrl      : string,
+  config        : RenderTaskConfig,
+  appUrl        : string,
   internalSecret: string,
-  useGpu      : boolean,
+  useGpu        : boolean,
 ): string {
-  const { jobId, frameNumber, gcsScenePath, software } = config
-  const outputPath  = `/mnt/render/output/${jobId}`
-  const paddedFrame = String(frameNumber).padStart(4, '0')
-  const blender     = blenderBin(software)
-
-  // GPU VMs need CUDA initialised before Blender starts.
-  // The render-node image must have the NVIDIA driver + CUDA toolkit installed.
-  const gpuInit = useGpu ? `
+  const { jobId, chunkIndex, startFrame, endFrame, gcsScenePath, software } = config
+  const outputPath   = `/mnt/render/output/${jobId}`
+  const blender      = blenderBin(software)
+  const isMultiFrame = endFrame > startFrame
+  const cyclesDevice = useGpu ? '--cycles-device CUDA' : ''
+  const gpuInit      = useGpu ? `
 # ── GPU: initialise CUDA / verify driver ──────────────────────────────────────
 nvidia-smi || { echo "ERROR: nvidia-smi failed — GPU driver not ready"; exit 1; }
 ` : ''
 
-  // --cycles-device CUDA tells Blender to use the GPU; omit it for CPU machines.
-  const cyclesDevice = useGpu ? '--cycles-device CUDA' : ''
+  // For a single frame use -f; for a range use -s/-e/-a (animation mode)
+  const renderCmd = isMultiFrame
+    ? `${blender} -b /mnt/render/${gcsScenePath} \\
+  --python-expr "import bpy; bpy.context.scene.cycles.use_denoising = False" \\
+  -E CYCLES \\
+  ${cyclesDevice} \\
+  -o "${outputPath}/####" \\
+  -s ${startFrame} -e ${endFrame} \\
+  -F PNG -a`
+    : `${blender} -b /mnt/render/${gcsScenePath} \\
+  --python-expr "import bpy; bpy.context.scene.cycles.use_denoising = False" \\
+  -E CYCLES \\
+  ${cyclesDevice} \\
+  -o "${outputPath}/####" \\
+  -f ${startFrame} \\
+  -F PNG`
 
   return `#!/bin/bash
 set -e
@@ -95,29 +111,23 @@ echo "GCS bucket mounted"
 # ── 2. Create output directory ─────────────────────────────────────────────────
 mkdir -p ${outputPath}
 
-# ── 3. Signal render start (sets started_at for elapsed-time tracking) ────────
+# ── 3. Signal render start ────────────────────────────────────────────────────
 curl -s -X POST ${appUrl}/api/gcp/task-start \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${internalSecret}" \\
-  -d '{"jobId":"${jobId}","frame":${frameNumber}}'
+  -d '{"jobId":"${jobId}","chunkIndex":${chunkIndex},"startFrame":${startFrame},"endFrame":${endFrame}}'
 
-# ── 4. Run Blender render ──────────────────────────────────────────────────────
-echo "Rendering job=${jobId} frame=${frameNumber} software=${software} gpu=${useGpu}"
+# ── 4. Run Blender render (frames ${startFrame}–${endFrame}) ─────────────────
+echo "Rendering job=${jobId} chunk=${chunkIndex} frames=${startFrame}-${endFrame} software=${software} gpu=${useGpu}"
 echo "Using Blender binary: ${blender}"
-${blender} -b /mnt/render/${gcsScenePath} \\
-  --python-expr "import bpy; bpy.context.scene.cycles.use_denoising = False" \\
-  -E CYCLES \\
-  ${cyclesDevice} \\
-  -o "${outputPath}/${paddedFrame}" \\
-  -f ${frameNumber} \\
-  -F PNG
-echo "Render complete: frame ${frameNumber}"
+${renderCmd}
+echo "Render complete: frames ${startFrame}-${endFrame}"
 
 # ── 5. Signal completion back to the API ──────────────────────────────────────
 curl -s -X POST ${appUrl}/api/gcp/task-complete \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${internalSecret}" \\
-  -d '{"jobId":"${jobId}","frame":${frameNumber},"status":"complete"}'
+  -d '{"jobId":"${jobId}","chunkIndex":${chunkIndex},"startFrame":${startFrame},"endFrame":${endFrame},"status":"complete"}'
 
 # ── 6. Self-delete this VM (billing stops immediately) ────────────────────────
 INSTANCE_NAME=$(curl -s "http://metadata.google.internal/computeMetadata/v1/instance/name" -H "Metadata-Flavor: Google")
@@ -127,26 +137,22 @@ gcloud compute instances delete "$INSTANCE_NAME" --zone="$ZONE" --quiet
 }
 
 /**
- * Spawn ONE VM for ONE frame.
+ * Spawn ONE VM for ONE chunk (one or more frames).
+ * VM name is based on chunkIndex so it's stable and unique.
  */
 export async function spawnRenderVM(
   config: RenderTaskConfig,
   appUrl: string,
   internalSecret: string
 ): Promise<string> {
-  const vmName = `render-${config.jobId.slice(0, 8)}-f${config.frameNumber}`.toLowerCase()
+  const vmName = `render-${config.jobId.slice(0, 8)}-c${config.chunkIndex}`.toLowerCase()
 
-  // Resolve the addon's human-readable ID → real GCP machine type + optional accelerator.
-  // Fall back to the raw string for CPU machine types (n1-standard-*, c2-*, etc.)
-  const resolved   = MACHINE_TYPE_MAP[config.machineType]
-  const gcpType    = resolved?.gcpType    ?? config.machineType
+  const resolved    = MACHINE_TYPE_MAP[config.machineType]
+  const gcpType     = resolved?.gcpType    ?? config.machineType
   const accelerator = resolved?.accelerator ?? null
-  const useGpu     = accelerator != null || (resolved != null && !config.machineType.startsWith('n1-'))
+  const useGpu      = accelerator != null || (resolved != null && !config.machineType.startsWith('n1-'))
 
   const startupScript = buildStartupScript(config, appUrl, internalSecret, useGpu)
-
-  // GPU VMs (and preemptible VMs) must use TERMINATE on host maintenance.
-  // Standard CPU VMs can MIGRATE which is cheaper/safer.
   const mustTerminate = config.preemptible || useGpu
 
   const instanceResource: Record<string, unknown> = {
@@ -156,11 +162,7 @@ export async function spawnRenderVM(
     disks: [{
       boot      : true,
       autoDelete: true,
-      initializeParams: {
-        sourceImage: RENDER_IMAGE,
-        // disk size inherited from the source image (50 GB render-node-v1)
-        // do NOT pass diskSizeGb — proto3 int64 serialisation chokes on it
-      },
+      initializeParams: { sourceImage: RENDER_IMAGE },
     }],
 
     networkInterfaces: [{
@@ -180,23 +182,21 @@ export async function spawnRenderVM(
       ],
     }],
 
-    // Note: automaticRestart omitted — it's a proto BoolValue wrapper and causes
-    // serialisation issues in the Node.js client; default behaviour is correct.
     scheduling: {
       preemptible      : config.preemptible,
       onHostMaintenance: mustTerminate ? 'TERMINATE' : 'MIGRATE',
     },
 
     labels: {
-      'job-id'    : config.jobId.slice(0, 8),
-      'frame'     : String(config.frameNumber),
-      'managed-by': 'renderfarm',
-      'gpu'       : useGpu ? 'true' : 'false',
+      'job-id'     : config.jobId.slice(0, 8),
+      'chunk'      : String(config.chunkIndex),
+      'start-frame': String(config.startFrame),
+      'end-frame'  : String(config.endFrame),
+      'managed-by' : 'renderfarm',
+      'gpu'        : useGpu ? 'true' : 'false',
     },
   }
 
-  // Attach GPU accelerator for machine types that need it (T4, V100).
-  // A100 (a2-*) and L4 (g2-*) have the GPU built into the machine family.
   if (accelerator) {
     instanceResource.guestAccelerators = [{
       acceleratorType : accelerator.type,
@@ -204,18 +204,43 @@ export async function spawnRenderVM(
     }]
   }
 
-  await computeClient.insert({
-    project         : GCP_PROJECT,
-    zone            : GCP_ZONE,
-    instanceResource,
-  })
-
-  console.log(`VM spawned: ${vmName} (gcpType=${gcpType}, gpu=${useGpu})`)
+  await computeClient.insert({ project: GCP_PROJECT, zone: GCP_ZONE, instanceResource })
+  console.log(`VM spawned: ${vmName} (frames ${config.startFrame}-${config.endFrame}, gcpType=${gcpType}, gpu=${useGpu})`)
   return vmName
 }
 
+import type { TaskChunk } from '@/lib/utils/frames'
+
 /**
- * Spawn VMs for ALL frames simultaneously.
+ * Spawn VMs for a list of TaskChunks simultaneously.
+ * Each chunk gets exactly one VM — one Blender process rendering startFrame..endFrame.
+ */
+export async function spawnChunkVMs(
+  jobId         : string,
+  chunks        : TaskChunk[],
+  gcsScenePath  : string,
+  machineType   : string  = 'n1-standard-4',
+  preemptible   : boolean = true,
+  appUrl        : string,
+  internalSecret: string,
+  software      : string  = 'blender-4-1',
+): Promise<string[]> {
+  const vmNames = await Promise.all(
+    chunks.map(chunk =>
+      spawnRenderVM(
+        { jobId, chunkIndex: chunk.index, startFrame: chunk.startFrame, endFrame: chunk.endFrame, gcsScenePath, machineType, preemptible, software },
+        appUrl,
+        internalSecret,
+      )
+    )
+  )
+  console.log(`Spawned ${vmNames.length} VMs for job ${jobId} (software=${software})`)
+  return vmNames
+}
+
+/**
+ * Legacy: spawn one VM per individual frame (chunk_size=1 compat).
+ * Each frame becomes a single-frame chunk.
  */
 export async function spawnJobVMs(
   jobId         : string,
@@ -227,17 +252,10 @@ export async function spawnJobVMs(
   internalSecret: string,
   software      : string  = 'blender-4-1',
 ): Promise<string[]> {
-  const vmNames = await Promise.all(
-    frames.map(frame =>
-      spawnRenderVM(
-        { jobId, frameNumber: frame, gcsScenePath, machineType, preemptible, software },
-        appUrl,
-        internalSecret,
-      )
-    )
-  )
-  console.log(`Spawned ${vmNames.length} VMs for job ${jobId} (software=${software})`)
-  return vmNames
+  const chunks: TaskChunk[] = frames.map((f, i) => ({
+    index: i, frames: [f], startFrame: f, endFrame: f, isScout: false,
+  }))
+  return spawnChunkVMs(jobId, chunks, gcsScenePath, machineType, preemptible, appUrl, internalSecret, software)
 }
 
 /**

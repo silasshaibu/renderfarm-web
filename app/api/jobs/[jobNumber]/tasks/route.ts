@@ -23,13 +23,14 @@ export async function GET(
   const jobId = (jobRows[0] as { id: number }).id
 
   const rows = await sql`
-    SELECT frame_index, frame_number, status, started_at, completed_at, output_url, worker_host
+    SELECT frame_index, frame_number, status, started_at, completed_at, output_url, worker_host,
+           is_scout, start_frame, end_frame, cost_usd
     FROM   tasks
     WHERE  job_id = ${jobId}
     ORDER  BY frame_index ASC
   `
 
-  // Return a map: { [frameIndex]: { status, startedAt, completedAt, outputUrl, workerHost, durationSec } }
+  // Return a map: { [frameIndex]: TaskTiming }
   const result: Record<number, {
     status:      string
     startedAt:   string | null
@@ -37,6 +38,10 @@ export async function GET(
     outputUrl:   string
     workerHost:  string
     durationSec: number | null
+    isScout:     boolean
+    startFrame:  number | null
+    endFrame:    number | null
+    costUsd:     number | null
   }> = {}
 
   for (const r of rows as Record<string, unknown>[]) {
@@ -53,6 +58,10 @@ export async function GET(
       outputUrl:   (r.output_url  as string) ?? '',
       workerHost:  (r.worker_host as string) ?? '',
       durationSec: duration,
+      isScout:     Boolean(r.is_scout),
+      startFrame:  r.start_frame != null ? Number(r.start_frame) : null,
+      endFrame:    r.end_frame   != null ? Number(r.end_frame)   : null,
+      costUsd:     r.cost_usd    != null ? Number(r.cost_usd)    : null,
     }
   }
 

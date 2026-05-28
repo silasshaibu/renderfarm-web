@@ -111,6 +111,12 @@ export async function initDB() {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_tasks_job ON tasks(job_id)
   `
+  // Chunk architecture columns — added after initial schema
+  await sql`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_scout   BOOLEAN   DEFAULT FALSE`
+  await sql`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS start_frame INTEGER`
+  await sql`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS end_frame   INTEGER`
+  await sql`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS chunk_index INTEGER`
+  await sql`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cost_usd    NUMERIC(10,6) DEFAULT 0`
 
   // ── Task logs — written by the render worker during/after each frame ─────────
   await sql`

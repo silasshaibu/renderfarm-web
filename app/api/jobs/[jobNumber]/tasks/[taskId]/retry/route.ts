@@ -43,21 +43,40 @@ export async function POST(req: NextRequest, context: Context) {
     )
   }
 
-  // Resolve frame index → actual frame number
-  const frames      = parseFrameRange(job.frames as string)
-  const frameNumber = frames[frameIndex]
+  // Load existing task row (may have chunk-level start/end frame info)
+  const taskRows = await sql`
+    SELECT frame_number, start_frame, end_frame, chunk_index
+    FROM tasks
+    WHERE job_id = ${job.id} AND frame_index = ${frameIndex}
+    LIMIT 1
+  ` as Record<string, unknown>[]
 
-  if (frameNumber == null) {
-    return NextResponse.json(
-      { message: `Frame index ${frameIndex} is out of range for this job` },
-      { status: 400 },
-    )
+  // Resolve frame number: prefer DB row, else derive from frame range
+  let frameNumber: number
+  let startFrame: number
+  let endFrame: number
+
+  if (taskRows.length) {
+    const t = taskRows[0]
+    frameNumber = Number(t.frame_number ?? t.start_frame ?? frames[frameIndex])
+    startFrame  = Number(t.start_frame  ?? t.frame_number ?? frames[frameIndex])
+    endFrame    = Number(t.end_frame    ?? startFrame)
+  } else {
+    const allFrames = parseFrameRange(job.frames as string)
+    const fn = allFrames[frameIndex]
+    if (fn == null) {
+      return NextResponse.json(
+        { message: `Frame index ${frameIndex} is out of range for this job` },
+        { status: 400 },
+      )
+    }
+    frameNumber = fn; startFrame = fn; endFrame = fn
   }
 
-  // Reset task record → pending (upsert so it works even if no record existed yet)
+  // Reset task record → pending
   await sql`
-    INSERT INTO tasks (job_id, frame_index, frame_number, status)
-    VALUES (${job.id}, ${frameIndex}, ${frameNumber}, 'pending')
+    INSERT INTO tasks (job_id, frame_index, frame_number, chunk_index, start_frame, end_frame, status)
+    VALUES (${job.id}, ${frameIndex}, ${frameNumber}, ${frameIndex}, ${startFrame}, ${endFrame}, 'pending')
     ON CONFLICT (job_id, frame_index)
     DO UPDATE SET
       status       = 'pending',
@@ -75,7 +94,7 @@ export async function POST(req: NextRequest, context: Context) {
       AND status IN ('failed', 'queued', 'pending')
   `
 
-  // Spawn a single VM for this frame
+  // Spawn a single VM for this chunk
   const manifest    = (job.manifest as Record<string, unknown>) ?? {}
   const machineType = (manifest.machine_type as string)  ?? 'n1-standard-4'
   const preemptible = (manifest.preemptible  as boolean) ?? true
@@ -86,6 +105,9 @@ export async function POST(req: NextRequest, context: Context) {
     const vmName = await spawnRenderVM(
       {
         jobId:        String(job.id),
+        chunkIndex:   frameIndex,
+        startFrame,
+        endFrame,
         frameNumber,
         gcsScenePath,
         machineType,
@@ -96,7 +118,7 @@ export async function POST(req: NextRequest, context: Context) {
       INTERNAL_SECRET,
     )
 
-    return NextResponse.json({ ok: true, vmName, frameNumber })
+    return NextResponse.json({ ok: true, vmName, frameNumber, startFrame, endFrame })
   } catch (err) {
     console.error('[task-retry]', err)
 

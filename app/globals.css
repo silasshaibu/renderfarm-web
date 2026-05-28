@@ -1733,11 +1733,66 @@ select.cost-limit-field {
 .task-status--failed   .task-status-dot { background: #f87171; }
 .task-status--holding  .task-status-dot { background: #f59e0b; }
 .task-status--pending  .task-status-dot { background: #6b7280; }
-.task-status--done     { color: #4ade80; }
-.task-status--running  { color: #fbbf24; }
-.task-status--failed   { color: #f87171; }
-.task-status--holding  { color: #fbbf24; }
-.task-status--pending  { color: #6b7280; }
+.task-status--done      { color: #4ade80; }
+.task-status--running   { color: #fbbf24; }
+.task-status--failed    { color: #f87171; }
+.task-status--holding   { color: #fbbf24; }
+.task-status--pending   { color: #6b7280; }
+.task-status--preempted { color: #fb923c; }
+.task-status--reviewed  { color: #a78bfa; }
+.task-status--held      { color: #94a3b8; }
+.task-status--preempted .task-status-dot { background: #fb923c; }
+.task-status--reviewed  .task-status-dot { background: #a78bfa; }
+.task-status--held      .task-status-dot { background: #94a3b8; }
+
+/* scout badge inline chip */
+.scout-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+/* approve-scouts banner */
+.approve-scouts-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.approve-scouts-banner-text {
+  font-size: 13px;
+  color: #fbbf24;
+  line-height: 1.4;
+}
+.approve-scouts-banner-text strong { font-weight: 600; }
+.approve-scouts-btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f59e0b;
+  color: #000;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.approve-scouts-btn:hover  { background: #fbbf24; }
+.approve-scouts-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* job detail meta row (user + project icons) */
 .job-meta-row {

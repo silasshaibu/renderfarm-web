@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 import { sendEmail, jobCompleteEmail } from '@/lib/email'
-import { spawnJobVMs } from '@/lib/gcp/compute'
+import { spawnChunkVMs } from '@/lib/gcp/compute'
 import { INTERNAL_SECRET } from '@/lib/gcp/clients'
-import { parseFrameRange } from '@/lib/utils/frames'
+import { parseFrameRange, chunkFrames, resolveScoutFrames } from '@/lib/utils/frames'
 
 
 
@@ -169,32 +169,49 @@ export async function POST(req: NextRequest) {
 
   const job = rowToJob(rows[0] as Record<string, unknown>)
 
-  // ── Auto-dispatch GCP VMs for any job that has a scene file ─────────────────
-  // No "Start Rendering" button needed — submission triggers rendering immediately.
+  // ── Auto-dispatch GCP VMs using chunk + scout architecture ─────────────────
   if (gcsScenePath) {
     try {
-      const frames      = parseFrameRange(data.frames ?? '1-1')
+      const allFrames   = parseFrameRange(data.frames ?? '1-1')
       const appUrl      = process.env.NEXT_PUBLIC_APP_URL ?? 'https://renderfarm-web.vercel.app'
       const machineType = data.machine_type ?? 'n1-standard-4'
       const preemptible = data.preemptible  ?? true
       const software    = data.software     ?? 'blender-4-1'
+      const chunkSize   = Number((data.manifest as Record<string, unknown> | undefined)?.chunk_size ?? 1)
+      const scoutExpr   = String((data.manifest as Record<string, unknown> | undefined)?.scout_frames ?? '')
 
-      // Spawn all frames in parallel immediately — no scout gate
-      await spawnJobVMs(
-        String(job.id), frames, gcsScenePath,
+      const scoutFrames = resolveScoutFrames(scoutExpr, allFrames)
+      const chunks      = chunkFrames(allFrames, chunkSize, scoutFrames)
+      const hasScouts   = scoutFrames.length > 0
+
+      // Pre-create ALL task rows: scouts = pending, non-scouts = held (if scouts defined)
+      const jobIdInt = Number(job.id)
+      for (const chunk of chunks) {
+        const taskStatus = (!hasScouts || chunk.isScout) ? 'pending' : 'held'
+        await sql`
+          INSERT INTO tasks (job_id, frame_index, frame_number, chunk_index, start_frame, end_frame, status, is_scout)
+          VALUES (${jobIdInt}, ${chunk.index}, ${chunk.startFrame}, ${chunk.index}, ${chunk.startFrame}, ${chunk.endFrame}, ${taskStatus}, ${chunk.isScout})
+          ON CONFLICT (job_id, frame_index) DO NOTHING
+        `
+      }
+
+      // Spawn VMs only for scout chunks (or all if no scouts configured)
+      const toDispatch = hasScouts ? chunks.filter(c => c.isScout) : chunks
+      await spawnChunkVMs(
+        String(job.id), toDispatch, gcsScenePath,
         machineType, preemptible, appUrl, INTERNAL_SECRET, software
       )
 
+      const jobStatus = hasScouts ? 'running' : 'running'
       await sql`
         UPDATE jobs
-        SET status      = 'running',
+        SET status      = ${jobStatus},
             held_frames = '[]'::jsonb,
             updated_at  = NOW()
         WHERE id = ${job.id}
       `
     } catch (err) {
       console.error('[jobs POST] GCP dispatch failed:', err)
-      // Job is created — dispatch failure is non-fatal, user can retry via /api/gcp/dispatch
     }
   }
 

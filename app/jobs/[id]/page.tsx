@@ -102,13 +102,17 @@ function ScoutModal({
   )
 }
 
-// ── Per-frame task timing (from tasks table) ──────────────────────────────────
+// ── Per-chunk task timing (from tasks table) ──────────────────────────────────
 interface TaskTiming {
   status:      string
   startedAt:   string | null
   completedAt: string | null
   outputUrl:   string
   durationSec: number | null
+  isScout:     boolean
+  startFrame:  number | null
+  endFrame:    number | null
+  costUsd:     number | null
 }
 
 // Conductor format: "0.35 Minutes" / "1.20 Minutes" / "1.50 Hours"
@@ -186,9 +190,9 @@ const ACTIONS: Record<string, ActionDef[]> = {
 }
 
 // ── Per-frame task status ─────────────────────────────────────────────────────
-type TaskStatus = 'done' | 'running' | 'failed' | 'holding' | 'pending' | 'reviewed' | 'preempted'
+type TaskStatus = 'done' | 'running' | 'failed' | 'holding' | 'pending' | 'reviewed' | 'preempted' | 'held'
 
-const DONE_STATUSES     = new Set(['done', 'success', 'downloaded', 'reviewed'])
+const DONE_STATUSES     = new Set(['done', 'success', 'complete', 'downloaded', 'reviewed'])
 const FAILED_STATUSES   = new Set(['failed', 'killed'])
 const HOLDING_STATUSES  = new Set(['holding'])
 const PENDING_STATUSES  = new Set(['queued', 'uploading', 'upload_pending', 'sync_pending', 'sync_failed', 'syncing', 'pending', 'preempted'])
@@ -217,6 +221,18 @@ function TaskStatusCell({ status }: { status: TaskStatus }) {
   )
 }
 
+function ScoutBadge() {
+  return (
+    <span className="scout-badge">
+      <svg width="8" height="8" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      SCOUT
+    </span>
+  )
+}
+
 // ── Page props ────────────────────────────────────────────────────────────────
 interface PageProps { params: Promise<{ id: string }> }
 const TASK_PAGE_SIZE = 10
@@ -236,9 +252,11 @@ export default function JobDetailPage({ params }: PageProps) {
   const [ctxMenu, setCtxMenu] = useState<{
     x: number; y: number; idx: number; frameNum: number; status: TaskStatus
   } | null>(null)
-  const [selTask,       setSelTask]       = useState<number | null>(null)
-  const [showScout,     setShowScout]     = useState(false)
-  const [scoutCreated,  setScoutCreated]  = useState('')
+  const [selTask,         setSelTask]         = useState<number | null>(null)
+  const [showScout,       setShowScout]       = useState(false)
+  const [scoutCreated,    setScoutCreated]    = useState('')
+  const [approvingScouts, setApprovingScouts] = useState(false)
+  const [approveMsg,      setApproveMsg]      = useState('')
 
   const loadTimings = useCallback(async (jobId: string) => {
     try {
@@ -401,6 +419,30 @@ export default function JobDetailPage({ params }: PageProps) {
     }
   }
 
+  const handleApproveScouts = async () => {
+    if (!job || approvingScouts) return
+    setApprovingScouts(true)
+    setApproveMsg('')
+    try {
+      const token = getToken() ?? ''
+      const res = await fetch(`/api/jobs/${job.jobNumber}/approve-scouts`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const json = await res.json() as { ok?: boolean; released?: number; message?: string }
+      if (!res.ok) {
+        setApproveMsg(json.message ?? 'Approve failed')
+      } else {
+        setApproveMsg(`Released ${json.released ?? 0} held tasks`)
+        await load(true)
+      }
+    } catch {
+      setApproveMsg('Network error')
+    } finally {
+      setApprovingScouts(false)
+    }
+  }
+
   // ── Derived values ──────────────────────────────────────────────────────────
   const authUser = getUser()
   const cfg      = STATUS_CFG[job?.status ?? ''] ?? { globe: 'pending', label: job?.status ?? '' }
@@ -419,10 +461,23 @@ export default function JobDetailPage({ params }: PageProps) {
     return { frames: str, start, end, total, done, pct }
   }, [job])
 
-  const totalTaskPages = Math.max(1, Math.ceil(total / TASK_PAGE_SIZE))
+  // ── Scout / held banner logic ───────────────────────────────────────────────
+  const taskTimingList = Object.values(taskTimings)
+  const hasScoutTasks  = taskTimingList.some(t => t.isScout)
+  const scoutsAllDone  = hasScoutTasks && taskTimingList.filter(t => t.isScout).every(t => DONE_STATUSES.has(t.status))
+  const heldTaskCount  = taskTimingList.filter(t => t.status === 'held').length
+  const showApproveBtn = hasScoutTasks && scoutsAllDone && heldTaskCount > 0
+
+  // When taskTimings has rows, use chunk count for pagination; else fall back to frame count
+  const taskKeys       = Object.keys(taskTimings).map(Number).sort((a, b) => a - b)
+  const taskRowCount   = taskKeys.length > 0 ? taskKeys.length : total
+  const totalTaskPages = Math.max(1, Math.ceil(taskRowCount / TASK_PAGE_SIZE))
   const taskStart      = (taskPage - 1) * TASK_PAGE_SIZE
-  const taskEnd        = Math.min(taskStart + TASK_PAGE_SIZE, total)
-  const taskIndices    = Array.from({ length: taskEnd - taskStart }, (_, i) => taskStart + i)
+  const taskEnd        = Math.min(taskStart + TASK_PAGE_SIZE, taskRowCount)
+  // When we have real task rows, iterate over their keys; otherwise use 0-based frame indices
+  const taskIndices    = taskKeys.length > 0
+    ? taskKeys.slice(taskStart, taskEnd)
+    : Array.from({ length: taskEnd - taskStart }, (_, i) => taskStart + i)
 
   // Manifest + DB fields
   const manifest      = job?.manifest
@@ -649,35 +704,61 @@ export default function JobDetailPage({ params }: PageProps) {
         {/* ── Task table ────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-gray-200">
-            Tasks <span className="text-gray-500 font-normal">({total})</span>
+            Tasks <span className="text-gray-500 font-normal">({taskRowCount})</span>
+            {heldTaskCount > 0 && (
+              <span className="ml-2 text-xs font-normal text-slate-400">
+                · {heldTaskCount} held
+              </span>
+            )}
           </h3>
           <span className="text-xs text-gray-500">
-            Showing {taskStart + 1}–{taskEnd} of {total}
+            Showing {taskStart + 1}–{taskEnd} of {taskRowCount}
           </span>
         </div>
+
+        {/* Approve Scout Frames banner */}
+        {showApproveBtn && (
+          <div className="approve-scouts-banner">
+            <span className="approve-scouts-banner-text">
+              <strong>Scout frames complete.</strong> All scout tasks finished — approve to release {heldTaskCount} held task{heldTaskCount !== 1 ? 's' : ''} and spawn their VMs.
+              {approveMsg && <span className="ml-2 text-xs opacity-75">{approveMsg}</span>}
+            </span>
+            <button
+              type="button"
+              className="approve-scouts-btn"
+              disabled={approvingScouts}
+              onClick={handleApproveScouts}>
+              {approvingScouts ? 'Releasing…' : 'Approve Scout Frames'}
+            </button>
+          </div>
+        )}
 
         <div className="job-task-wrap mb-3">
           <table className="job-task-table">
             <thead>
               <tr>
                 <th className="job-task-th">TASK ID</th>
-                <th className="job-task-th">FRAME</th>
+                <th className="job-task-th">FRAMES</th>
                 <th className="job-task-th">STATUS</th>
+                <th className="job-task-th center">SCOUT</th>
                 <th className="job-task-th right">CORES</th>
                 <th className="job-task-th right">MEMORY</th>
                 <th className="job-task-th center">PREEMPTIBLE</th>
                 <th className="job-task-th right">ELAPSED</th>
                 <th className="job-task-th right">START TIME</th>
                 <th className="job-task-th right">END TIME</th>
+                <th className="job-task-th right">COST</th>
                 <th className="job-task-th center">ACTION</th>
               </tr>
             </thead>
             <tbody>
               {taskIndices.map((idx) => {
-                const frameNum   = start + idx
                 const timing     = taskTimings[idx]
+                // Frame range display: use DB start/end if available, else derive from index
+                const sf         = timing?.startFrame ?? (start + idx)
+                const ef         = timing?.endFrame   ?? sf
+                const frameLabel = sf === ef ? String(sf) : `${sf}–${ef}`
                 const tStatus    = (timing?.status ?? frameStatus(job.status, idx, job.outputs ?? [])) as TaskStatus
-                const outputUrl  = timing?.outputUrl || job.outputs?.[idx]
                 const isSelected = selTask === idx
 
                 return (
@@ -686,7 +767,7 @@ export default function JobDetailPage({ params }: PageProps) {
                     onClick={() => setSelTask(isSelected ? null : idx)}
                     onContextMenu={e => {
                       e.preventDefault()
-                      setCtxMenu({ x: e.clientX, y: e.clientY, idx, frameNum, status: tStatus })
+                      setCtxMenu({ x: e.clientX, y: e.clientY, idx, frameNum: sf, status: tStatus })
                     }}>
 
                     <td className="job-task-td">
@@ -697,8 +778,11 @@ export default function JobDetailPage({ params }: PageProps) {
                         {padTask(idx)}
                       </Link>
                     </td>
-                    <td className="job-task-td">{frameNum}</td>
+                    <td className="job-task-td">{frameLabel}</td>
                     <td className="job-task-td"><TaskStatusCell status={tStatus} /></td>
+                    <td className="job-task-td center">
+                      {timing?.isScout && <ScoutBadge />}
+                    </td>
                     <td className="job-task-td right">{taskCores}</td>
                     <td className="job-task-td right">{taskMemoryGB} GB</td>
                     <td className="job-task-td center text-gray-400">
@@ -707,12 +791,15 @@ export default function JobDetailPage({ params }: PageProps) {
                     <td className="job-task-td right text-gray-400">{fmtDuration(timing?.durationSec ?? null)}</td>
                     <td className="job-task-td right text-gray-400">{fmtTime(timing?.startedAt ?? null)}</td>
                     <td className="job-task-td right text-gray-400">{fmtTime(timing?.completedAt ?? null)}</td>
+                    <td className="job-task-td right text-gray-400">
+                      {timing?.costUsd != null ? `$${timing.costUsd.toFixed(4)}` : '—'}
+                    </td>
                     <td className="job-task-td center">
                       {['failed', 'killed', 'preempted'].includes(tStatus) && (
                         <div className="flex flex-col items-center gap-0.5">
                           <button
                             type="button"
-                            title={taskErrors[idx] ?? 'Retry this frame on a new VM'}
+                            title={taskErrors[idx] ?? 'Retry this chunk on a new VM'}
                             disabled={retryingTasks.has(idx)}
                             onClick={e => { e.stopPropagation(); handleTaskAction('retry', idx) }}
                             className="task-retry-btn">
@@ -728,7 +815,7 @@ export default function JobDetailPage({ params }: PageProps) {
                                 <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
                               </svg>
                             )}
-                            <span className="sr-only">Retry frame {frameNum}</span>
+                            <span className="sr-only">Retry chunk {idx}</span>
                           </button>
                           {taskErrors[idx] && (
                             <span className="text-red-400 text-[10px] leading-tight max-w-[80px] text-center">
@@ -749,7 +836,7 @@ export default function JobDetailPage({ params }: PageProps) {
         <div className="flex items-center justify-between text-xs text-gray-500">
           <span>
             Showing <span className="text-gray-300">{taskStart + 1}–{taskEnd}</span> of{' '}
-            <span className="text-gray-300">{total}</span> entries
+            <span className="text-gray-300">{taskRowCount}</span> entries
           </span>
           <nav className="flex items-center gap-2" aria-label="Task pagination">
             <button type="button"
@@ -809,7 +896,7 @@ export default function JobDetailPage({ params }: PageProps) {
         // Enabled rules per action — matches Conductor behaviour
         const enabled: Record<string, boolean> = {
           hold:            active(['pending','queued']),
-          kill:            active(['pending','running','holding','queued']),
+          kill:            active(['pending','running','holding','queued','held']),
           retry:           !active(['done','complete','success']),
           'retry-failed':  s === 'failed',
           'retry-preempted': s === 'preempted',
