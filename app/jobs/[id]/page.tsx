@@ -260,23 +260,29 @@ function TaskColumnsPopover({ visible, onToggle }: { visible: Set<TaskColKey>; o
   const [open, setOpen] = useState(false)
   return (
     <div className="relative">
-      <button type="button" aria-expanded={open} className="col-popover-btn" onClick={() => setOpen(o => !o)}>
-        {TASK_COL_BTN_ICON} Columns
-      </button>
+      {open ? (
+        <button type="button" aria-expanded="true" className="col-popover-btn" onClick={() => setOpen(false)}>
+          {TASK_COL_BTN_ICON} Columns
+        </button>
+      ) : (
+        <button type="button" aria-expanded="false" className="col-popover-btn" onClick={() => setOpen(true)}>
+          {TASK_COL_BTN_ICON} Columns
+        </button>
+      )}
       {open && (
-        <div className="col-popover-panel">
-          {TASK_COLUMNS.map(col => (
-            <label key={col.key} className="col-popover-item">
-              <input
-                type="checkbox"
-                className="col-popover-check"
-                checked={visible.has(col.key)}
-                onChange={() => onToggle(col.key)}
-              />
-              {col.label}
-            </label>
-          ))}
-        </div>
+        <>
+          <div className="fixed inset-0 z-10" aria-hidden="true" onClick={() => setOpen(false)} />
+          <div className="col-popover-panel" aria-label="Toggle columns">
+            {TASK_COLUMNS.map(col => (
+              <label key={col.key}
+                className="flex items-center gap-2.5 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer">
+                <input type="checkbox" className="accent-blue-500"
+                  checked={visible.has(col.key)} onChange={() => onToggle(col.key)} />
+                {col.label}
+              </label>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
