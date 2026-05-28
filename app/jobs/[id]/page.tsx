@@ -126,7 +126,6 @@ function fmtDuration(sec: number | null): string {
 function fmtTime(iso: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleString([], {
-    month: 'numeric', day: 'numeric', year: 'numeric',
     hour: 'numeric', minute: '2-digit', second: '2-digit',
   })
 }
