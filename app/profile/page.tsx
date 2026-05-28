@@ -29,7 +29,22 @@ interface Session {
   userAgent: string
   createdAt: string
   expiresAt: string
+  lastUsedAt: string | null
   isCurrent: boolean
+  source: 'dashboard' | 'addon' | 'api'
+}
+
+function SourceBadge({ source }: { source: Session['source'] }) {
+  const styles: Record<string, string> = {
+    dashboard: 'bg-blue-900/40 text-blue-300 border-blue-700/40',
+    addon:     'bg-purple-900/40 text-purple-300 border-purple-700/40',
+    api:       'bg-gray-700/40 text-gray-400 border-gray-600/40',
+  }
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap ${styles[source] ?? styles.api}`}>
+      {source}
+    </span>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -386,6 +401,7 @@ function SessionsSection() {
               <thead>
                 <tr className="text-left">
                   <th className="text-xs text-gray-500 uppercase tracking-wider font-medium pb-3 pr-4">IP Address</th>
+                  <th className="text-xs text-gray-500 uppercase tracking-wider font-medium pb-3 pr-4">Source</th>
                   <th className="text-xs text-gray-500 uppercase tracking-wider font-medium pb-3 pr-4">Created</th>
                   <th className="text-xs text-gray-500 uppercase tracking-wider font-medium pb-3 pr-4">Expires</th>
                   <th scope="col" className="text-xs text-gray-500 uppercase tracking-wider font-medium pb-3"><span className="sr-only">Actions</span></th>
@@ -404,6 +420,7 @@ function SessionsSection() {
                         )}
                       </div>
                     </td>
+                    <td className="py-3 pr-4"><SourceBadge source={s.source} /></td>
                     <td className="py-3 pr-4 text-gray-400 text-xs whitespace-nowrap">{fmtDate(s.createdAt)}</td>
                     <td className="py-3 pr-4 text-gray-400 text-xs whitespace-nowrap">{fmtDate(s.expiresAt)}</td>
                     <td className="py-3 text-right">

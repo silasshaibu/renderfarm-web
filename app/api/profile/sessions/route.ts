@@ -8,9 +8,11 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()
+  await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'dashboard'`.catch(() => null)
+  await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ DEFAULT NULL`.catch(() => null)
 
   const rows = await sql`
-    SELECT id, ip_address, user_agent, created_at, expires_at, jti
+    SELECT id, ip_address, user_agent, created_at, expires_at, jti, source, last_used_at
     FROM user_sessions
     WHERE user_id = ${user.sub}
       AND revoked = FALSE
@@ -22,12 +24,14 @@ export async function GET(req: NextRequest) {
   const currentJti = user.jti ?? ''
 
   return NextResponse.json(rows.map(r => ({
-    id:         r.id,
-    ip:         r.ip_address ?? '',
-    userAgent:  r.user_agent ?? '',
-    createdAt:  r.created_at,
-    expiresAt:  r.expires_at,
-    isCurrent:  r.jti === currentJti,
+    id:          r.id,
+    ip:          r.ip_address ?? '',
+    userAgent:   r.user_agent ?? '',
+    createdAt:   r.created_at,
+    expiresAt:   r.expires_at,
+    lastUsedAt:  r.last_used_at ?? null,
+    isCurrent:   r.jti === currentJti,
+    source:      (r.source as string) || 'dashboard',
   })))
 }
 

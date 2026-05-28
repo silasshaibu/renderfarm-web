@@ -3,6 +3,10 @@
     {
       "path": "/api/virtual-wrangler/run",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/auth/cleanup",
+      "schedule": "0 * * * *"
     }
   ]
 }

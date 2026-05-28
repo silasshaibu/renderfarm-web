@@ -1,3 +1,12 @@
+/**
+ * POST /api/auth/token — Blender addon authentication endpoint.
+ *
+ * Identical to /api/auth/login but:
+ *  - source = 'addon'
+ *  - sessions expire after 30 days (so artists don't need to reconnect frequently)
+ *  - deduplicates by (user_id, source='addon') so repeated Connect presses
+ *    reuse the existing session rather than creating new rows
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
@@ -13,9 +22,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Email and password are required' }, { status: 400 })
     }
 
-    await initDB()   // ensures tables exist + seeds default user on first run
+    await initDB()
 
-    // ── Rate limiting: 10 attempts per IP per 15 minutes ─────────────────────
     const ip = getIP(req.headers)
     const rl = await rateLimit(`login:${ip}`, 10, 15 * 60)
     if (!rl.allowed) {
@@ -36,7 +44,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 })
     }
 
-    // ── Suspension check ──────────────────────────────────────────────────
     if (user.status === 'suspended') {
       return NextResponse.json(
         { message: `Your account has been suspended. Reason: ${user.suspension_reason ?? 'Contact support.'}` },
@@ -44,19 +51,15 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Ensure new columns exist
+    // Ensure source column exists
     await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'dashboard'`.catch(() => null)
     await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ DEFAULT NULL`.catch(() => null)
 
-    const SOURCE     = 'dashboard'
-    const EXPIRY_MS  = 7 * 24 * 60 * 60 * 1000   // 7 days
-    const expiresAt  = new Date(Date.now() + EXPIRY_MS)
+    const SOURCE    = 'addon'
+    const EXPIRY_MS = 30 * 24 * 60 * 60 * 1000  // 30 days
+    const expiresAt = new Date(Date.now() + EXPIRY_MS)
 
-    // Clear invited flag on first login
-    await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS invited BOOLEAN DEFAULT FALSE`.catch(() => null)
-    await sql`UPDATE users SET invited = FALSE WHERE id = ${user.id} AND invited = TRUE`.catch(() => null)
-
-    // Dedup: reuse existing valid session for same user+source instead of accumulating rows
+    // Dedup: reuse the most recent valid addon session instead of creating a new row
     const existingSess = await sql`
       SELECT id, jti FROM user_sessions
       WHERE user_id = ${user.id}
@@ -67,27 +70,17 @@ export async function POST(req: NextRequest) {
       LIMIT 1
     ` as Record<string, unknown>[]
 
-    const check2fa = async (): Promise<boolean> => {
-      try {
-        const tfaRows = await sql`SELECT value FROM wrangler_settings WHERE key = 'require2fa' LIMIT 1` as Record<string, unknown>[]
-        if (!tfaRows.length || tfaRows[0].value !== true) return false
-        const secretRow = await sql`SELECT totp_secret FROM users WHERE id = ${user.id}`.catch(() => [])
-        return !((secretRow as Record<string, unknown>[])[0] as Record<string, unknown> | undefined)?.totp_secret
-      } catch { return false }
-    }
-
     if (existingSess.length > 0) {
       const ex = existingSess[0]
       await sql`UPDATE user_sessions SET expires_at = ${expiresAt.toISOString()}, last_used_at = NOW() WHERE id = ${ex.id}`
       const reuseToken = jwt.sign(
         { sub: String(user.id), email: user.email, isAdmin: user.is_admin, jti: ex.jti },
         JWT_SECRET,
-        { expiresIn: '7d' },
+        { expiresIn: '30d' },
       )
       return NextResponse.json({
         access_token: reuseToken,
         user: { id: String(user.id), email: user.email, isAdmin: user.is_admin },
-        requires2faSetup: await check2fa(),
       })
     }
 
@@ -95,7 +88,7 @@ export async function POST(req: NextRequest) {
     const access_token = jwt.sign(
       { sub: String(user.id), email: user.email, isAdmin: user.is_admin, jti },
       JWT_SECRET,
-      { expiresIn: '7d' },
+      { expiresIn: '30d' },
     )
 
     const userAgent = req.headers.get('user-agent') ?? ''
@@ -107,11 +100,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       access_token,
-      user:             { id: String(user.id), email: user.email, isAdmin: user.is_admin },
-      requires2faSetup: await check2fa(),
+      user: { id: String(user.id), email: user.email, isAdmin: user.is_admin },
     })
   } catch (err) {
-    console.error('Login error:', err)
+    console.error('Token error:', err)
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 })
   }
 }
