@@ -553,7 +553,10 @@ export default function JobDetailPage({ params }: PageProps) {
   )
 
   // Title value: "Blender 3.1.0 Linux Render {jobTitle}" — matches Conductor format
-  const titleValue = [softwarePretty, 'Render', job.title].filter(Boolean).join(' ')
+  // Addon already prefixes "Blender X.Y Linux Render …" — don't double it
+  const titleValue = /^blender\s/i.test(job.title ?? '')
+    ? (job.title ?? '')
+    : [softwarePretty, 'Render', job.title].filter(Boolean).join(' ')
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (

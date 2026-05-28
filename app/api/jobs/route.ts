@@ -96,6 +96,9 @@ export async function POST(req: NextRequest) {
     project_id?:         number | string  // required — must be an active project
     projectId?:          number | string  // camelCase alias sent by SubmissionKit renderfarm path
     project?:            number | string  // string ID alias sent by the Blender addon
+    chunk_size?:         number           // top-level field sent by Blender addon
+    scout_frames?:       string           // top-level field sent by Blender addon
+    use_scout_frames?:   boolean          // top-level field sent by Blender addon
   }
 
   // ── Project validation — every job must belong to an active project ─────────
@@ -177,8 +180,11 @@ export async function POST(req: NextRequest) {
       const machineType = data.machine_type ?? 'n1-standard-4'
       const preemptible = data.preemptible  ?? true
       const software    = data.software     ?? 'blender-4-1'
-      const chunkSize   = Number((data.manifest as Record<string, unknown> | undefined)?.chunk_size ?? 1)
-      const scoutExpr   = String((data.manifest as Record<string, unknown> | undefined)?.scout_frames ?? '')
+      // chunk_size and scout_frames may be top-level (Blender addon) or inside manifest (SubmissionKit)
+      const chunkSize   = Number(data.chunk_size ?? (data.manifest as Record<string, unknown> | undefined)?.chunk_size ?? 1)
+      const useScouts   = data.use_scout_frames ?? true
+      const rawScout    = data.scout_frames ?? String((data.manifest as Record<string, unknown> | undefined)?.scout_frames ?? '')
+      const scoutExpr   = useScouts ? rawScout : ''
 
       const scoutFrames = resolveScoutFrames(scoutExpr, allFrames)
       const chunks      = chunkFrames(allFrames, chunkSize, scoutFrames)
