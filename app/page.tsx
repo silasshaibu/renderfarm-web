@@ -55,7 +55,7 @@ function mapJob(j: ApiJob): Job {
     memory:      '16 GB',
     preemptible: true,
     progress,
-    tasks:       total,
+    tasks:       (j.taskCount != null && j.taskCount > 0) ? j.taskCount : total,
     avgFrame:    fmtAvgFrame(j.avgFrameSec),
     created:     j.createdAt,
     cost:        j.costUsd ?? 0,

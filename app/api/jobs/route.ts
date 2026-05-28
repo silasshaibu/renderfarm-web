@@ -33,6 +33,7 @@ function rowToJob(row: Record<string, unknown>) {
     heldFrames:         (row.held_frames as number[]) ?? [],
     avgFrameSec:        row.avg_frame_sec != null ? Number(row.avg_frame_sec) : null,
     projectId:          row.project_id != null ? Number(row.project_id) : null,
+    taskCount:          row.task_count  != null ? Number(row.task_count)  : null,
   }
 }
 
@@ -47,9 +48,11 @@ export async function GET(req: NextRequest) {
   if (jobNumber) {
     const rows = await sql`
       SELECT j.*,
-        ROUND(AVG(EXTRACT(EPOCH FROM (t.completed_at - t.started_at)))) AS avg_frame_sec
+        COUNT(DISTINCT tc.id)                                                     AS task_count,
+        ROUND(AVG(EXTRACT(EPOCH FROM (t.completed_at - t.started_at))))          AS avg_frame_sec
       FROM jobs j
-      LEFT JOIN tasks t ON t.job_id = j.id
+      LEFT JOIN tasks tc ON tc.job_id = j.id
+      LEFT JOIN tasks t  ON t.job_id  = j.id
         AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL
       WHERE j.job_number = ${jobNumber}
       GROUP BY j.id
@@ -61,9 +64,11 @@ export async function GET(req: NextRequest) {
 
   const rows = await sql`
     SELECT j.*,
-      ROUND(AVG(EXTRACT(EPOCH FROM (t.completed_at - t.started_at)))) AS avg_frame_sec
+      COUNT(DISTINCT tc.id)                                                     AS task_count,
+      ROUND(AVG(EXTRACT(EPOCH FROM (t.completed_at - t.started_at))))          AS avg_frame_sec
     FROM jobs j
-    LEFT JOIN tasks t ON t.job_id = j.id
+    LEFT JOIN tasks tc ON tc.job_id = j.id
+    LEFT JOIN tasks t  ON t.job_id  = j.id
       AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL
     GROUP BY j.id
     ORDER BY j.created_at DESC

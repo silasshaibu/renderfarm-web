@@ -145,6 +145,7 @@ export interface ApiJob {
   statusDescription?: string  // human-readable detail (e.g. "Waiting for GPU worker")
   costUsd?:          number   // computed from tasks timing: cores*$0.03/hr + GPUs*$0.45/hr
   avgFrameSec?:      number | null   // average seconds per completed frame (from tasks table)
+  taskCount?:        number | null   // actual number of task rows (chunks) for this job
   provider?:         string
   gcsScenePath?:     string
   heldFrames?:       number[]
