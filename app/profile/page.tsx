@@ -1,78 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { getToken, getUser } from '@/lib/auth'
-
-// ---------------------------------------------------------------------------
-// Shared UI primitives
-// ---------------------------------------------------------------------------
-function FormField({ label, id, children }: { label: string; id: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-        {label}
-      </label>
-      {children}
-    </div>
-  )
-}
-
-function TextInput({ id, value, onChange, type = 'text', readOnly = false, placeholder }: {
-  id: string; value: string; onChange?: (v: string) => void
-  type?: string; readOnly?: boolean; placeholder?: string
-}) {
-  return (
-    <input
-      id={id} type={type} value={value} readOnly={readOnly}
-      placeholder={placeholder}
-      onChange={onChange ? (e) => onChange(e.target.value) : undefined}
-      className={['calc-input px-3 py-2', readOnly ? 'opacity-60 cursor-default' : ''].join(' ')}
-    />
-  )
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="calc-card">
-      <h2 className="text-base font-semibold text-white mb-5 pb-3 profile-section-title">{title}</h2>
-      <div className="flex flex-col gap-4">{children}</div>
-    </div>
-  )
-}
-
-function SaveBtn({ onClick, saving }: { onClick: () => void; saving?: boolean }) {
-  return (
-    <button type="button" onClick={onClick} disabled={saving}
-      className="px-5 py-2 rounded text-sm font-medium profile-danger-btn disabled:opacity-50">
-      {saving ? 'Saving…' : 'Save Changes'}
-    </button>
-  )
-}
-
-function ApiKey({ value }: { value: string }) {
-  const [revealed, setRevealed] = useState(false)
-  const [copied,   setCopied]   = useState(false)
-  const handleCopy = () => {
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(true); setTimeout(() => setCopied(false), 2000)
-    })
-  }
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 calc-input px-3 py-2 font-mono text-sm text-gray-300 overflow-hidden truncate">
-        {revealed ? value : '•'.repeat(40)}
-      </div>
-      <button type="button" onClick={() => setRevealed(r => !r)}
-        className="px-3 py-2 rounded text-xs text-gray-400 border border-white/10 hover:text-white hover:border-white/20 transition-colors whitespace-nowrap">
-        {revealed ? 'Hide' : 'Reveal'}
-      </button>
-      <button type="button" onClick={handleCopy}
-        className="px-3 py-2 rounded text-xs text-gray-400 border border-white/10 hover:text-white hover:border-white/20 transition-colors whitespace-nowrap">
-        {copied ? 'Copied ✓' : 'Copy'}
-      </button>
-    </div>
-  )
-}
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { getToken } from '@/lib/auth'
 
 // ---------------------------------------------------------------------------
 // API helper
@@ -81,137 +10,457 @@ async function apiFetch(path: string, method = 'GET', body?: object) {
   const token = getToken() ?? ''
   const res   = await fetch(path, {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     ...(body ? { body: JSON.stringify(body) } : {}),
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({})) as { message?: string }
+    throw new Error(d.message ?? `HTTP ${res.status}`)
+  }
   return res.json()
 }
 
 // ---------------------------------------------------------------------------
-// Change password section
+// Types
 // ---------------------------------------------------------------------------
-function ChangePasswordSection() {
-  const [current,  setCurrent]  = useState('')
-  const [next,     setNext]     = useState('')
-  const [confirm,  setConfirm]  = useState('')
-  const [saving,   setSaving]   = useState(false)
-  const [ok,       setOk]       = useState(false)
-  const [err,      setErr]      = useState('')
+interface Session {
+  id: number
+  ip: string
+  userAgent: string
+  createdAt: string
+  expiresAt: string
+  isCurrent: boolean
+}
 
-  const handleSave = async () => {
-    setErr(''); setOk(false)
-    if (next.length < 8)        { setErr('New password must be at least 8 characters.'); return }
-    if (next !== confirm)       { setErr('Passwords do not match.'); return }
-    setSaving(true)
+// ---------------------------------------------------------------------------
+// Card wrapper
+// ---------------------------------------------------------------------------
+function Card({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`calc-card ${className}`}>
+      <h2 className="text-sm font-semibold text-gray-300 mb-4 pb-3 border-b border-white/10">{title}</h2>
+      {children}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Read-only field
+// ---------------------------------------------------------------------------
+function ReadField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">{label}</span>
+      <span className="text-sm text-gray-200 py-2 px-3 rounded bg-white/5 border border-white/10 min-h-[38px] flex items-center">
+        {value || <span className="text-gray-600 italic">—</span>}
+      </span>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// API Key modal
+// ---------------------------------------------------------------------------
+function ApiKeyModal({ onClose }: { onClose: () => void }) {
+  const [key,          setKey]         = useState('')
+  const [loading,      setLoading]     = useState(true)
+  const [regenerating, setRegenerating] = useState(false)
+  const [revealed,     setRevealed]    = useState(false)
+  const [copied,       setCopied]      = useState(false)
+  const [err,          setErr]         = useState('')
+  const [confirmed,    setConfirmed]   = useState(false)
+
+  useEffect(() => {
+    apiFetch('/api/profile/api-key')
+      .then(d => setKey((d as { key: string }).key))
+      .catch(e => setErr(e.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(key).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const handleRegenerate = async () => {
+    if (!confirmed) { setConfirmed(true); return }
+    setRegenerating(true); setErr('')
     try {
-      const token = getToken() ?? ''
-      const res = await fetch('/api/profile/password', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body:    JSON.stringify({ currentPassword: current, newPassword: next }),
-      })
-      const d = await res.json().catch(() => ({})) as { message?: string }
-      if (!res.ok) throw new Error(d.message ?? 'Update failed')
-      setOk(true)
-      setCurrent(''); setNext(''); setConfirm('')
-      setTimeout(() => setOk(false), 3000)
+      const d = await apiFetch('/api/profile/api-key', 'POST') as { key: string }
+      setKey(d.key); setRevealed(true); setConfirmed(false)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Update failed')
+      setErr(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setRegenerating(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="calc-card w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-base font-semibold text-white">API Key</h3>
+          <button type="button" onClick={onClose} className="text-gray-500 hover:text-white transition-colors text-xl leading-none">&times;</button>
+        </div>
+
+        {loading && <p className="text-gray-500 text-sm text-center py-6">Loading…</p>}
+        {err && <p className="text-red-400 text-sm mb-4">{err}</p>}
+
+        {!loading && key && (
+          <div className="flex flex-col gap-4">
+            <p className="text-xs text-gray-500">
+              Use this key to authenticate with the Renderfarm API and CLI tools.
+              Keep it secret — do not commit it to version control.
+            </p>
+
+            {/* Key display */}
+            <div className="flex items-center gap-2">
+              <div className="flex-1 font-mono text-xs text-gray-300 bg-white/5 border border-white/10 rounded px-3 py-2 truncate min-w-0">
+                {revealed ? key : '•'.repeat(48)}
+              </div>
+              <button type="button" onClick={() => setRevealed(r => !r)}
+                className="shrink-0 px-3 py-2 rounded text-xs text-gray-400 border border-white/10 hover:text-white hover:border-white/20 transition-colors">
+                {revealed ? 'Hide' : 'Reveal'}
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <button type="button" onClick={handleCopy}
+                className="flex-1 px-3 py-2 rounded text-xs font-medium text-white bg-blue-600 hover:bg-blue-500 transition-colors">
+                {copied ? '✓ Copied' : 'Copy Key'}
+              </button>
+              <button type="button" onClick={handleRegenerate} disabled={regenerating}
+                className={`flex-1 px-3 py-2 rounded text-xs font-medium transition-colors ${
+                  confirmed
+                    ? 'bg-red-700 hover:bg-red-600 text-white'
+                    : 'text-gray-400 border border-white/10 hover:text-white hover:border-white/20'
+                }`}>
+                {regenerating ? 'Regenerating…' : confirmed ? 'Confirm — this invalidates the old key' : 'Regenerate'}
+              </button>
+            </div>
+
+            {confirmed && (
+              <p className="text-xs text-amber-400 text-center">
+                Regenerating will invalidate the current key. Click again to confirm.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// MFA Section
+// ---------------------------------------------------------------------------
+function MfaSection() {
+  const [status,  setStatus]  = useState<'loading' | 'enabled' | 'setup' | 'verify' | 'backup'>('loading')
+  const [qr,      setQr]      = useState('')
+  const [secret,  setSecret]  = useState('')
+  const [code,    setCode]    = useState('')
+  const [backup,  setBackup]  = useState<string[]>([])
+  const [err,     setErr]     = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [disabling, setDisabling] = useState(false)
+  const [confirmDisable, setConfirmDisable] = useState(false)
+
+  const loadMfa = useCallback(async () => {
+    setStatus('loading')
+    try {
+      const d = await apiFetch('/api/profile/mfa') as { enabled: boolean; qr?: string; secret?: string }
+      if (d.enabled) {
+        setStatus('enabled')
+      } else {
+        setQr(d.qr ?? ''); setSecret(d.secret ?? ''); setStatus('setup')
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load MFA status')
+      setStatus('setup')
+    }
+  }, [])
+
+  useEffect(() => { loadMfa() }, [loadMfa])
+
+  const handleVerify = async () => {
+    setErr(''); setSaving(true)
+    try {
+      const d = await apiFetch('/api/profile/mfa', 'POST', { code }) as { backupCodes: string[] }
+      setBackup(d.backupCodes); setStatus('backup')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Verification failed')
     } finally {
       setSaving(false)
     }
   }
 
+  const handleDisable = async () => {
+    if (!confirmDisable) { setConfirmDisable(true); return }
+    setDisabling(true)
+    try {
+      await apiFetch('/api/profile/mfa', 'DELETE')
+      setStatus('setup'); setConfirmDisable(false); loadMfa()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setDisabling(false)
+    }
+  }
+
   return (
-    <Section title="Security">
-      {ok  && <div className="enterprise-alert-success"><span>✓</span> Password updated</div>}
-      {err && <div className="text-red-400 text-sm bg-red-900/20 border border-red-900/40 rounded px-4 py-3">{err}</div>}
-      <FormField label="Current Password" id="pw-current">
-        <TextInput id="pw-current" type="password" value={current} onChange={setCurrent} placeholder="Current password" />
-      </FormField>
-      <FormField label="New Password" id="pw-new">
-        <TextInput id="pw-new" type="password" value={next} onChange={setNext} placeholder="Min 8 characters" />
-      </FormField>
-      <FormField label="Confirm New Password" id="pw-confirm">
-        <TextInput id="pw-confirm" type="password" value={confirm} onChange={setConfirm} placeholder="Repeat new password" />
-      </FormField>
-      <div className="flex justify-end pt-2">
-        <SaveBtn onClick={handleSave} saving={saving} />
-      </div>
-    </Section>
+    <Card title="Multi-Factor Authentication (MFA)">
+      {err && <p className="text-red-400 text-sm mb-3">{err}</p>}
+
+      {status === 'loading' && (
+        <p className="text-gray-500 text-sm">Loading…</p>
+      )}
+
+      {status === 'enabled' && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <span className="w-2 h-2 rounded-full bg-green-400 inline-block"></span>
+            <span className="text-sm text-green-400 font-medium">MFA is enabled</span>
+          </div>
+          <p className="text-sm text-gray-500">
+            Your account is protected with a TOTP authenticator app.
+          </p>
+          <div>
+            <button type="button" onClick={handleDisable} disabled={disabling}
+              className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                confirmDisable
+                  ? 'bg-red-700 hover:bg-red-600 text-white'
+                  : 'text-red-400 border border-red-900/50 hover:bg-red-900/20'
+              }`}>
+              {disabling ? 'Disabling…' : confirmDisable ? 'Click again to confirm' : 'Disable MFA'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status === 'setup' && (
+        <div className="flex flex-col gap-5">
+          <p className="text-sm text-gray-400">
+            Protect your account with a time-based one-time password (TOTP) authenticator app
+            like Google Authenticator or Authy.
+          </p>
+          <div className="flex gap-6 items-start flex-wrap">
+            {qr && (
+              <div className="shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={qr} alt="MFA QR code" className="w-40 h-40 rounded bg-white p-2" />
+              </div>
+            )}
+            <div className="flex flex-col gap-3 min-w-0">
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Or enter this key manually:</p>
+                <p className="font-mono text-xs text-gray-300 bg-white/5 border border-white/10 rounded px-3 py-2 break-all">
+                  {secret}
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-gray-500">Enter the 6-digit code from your app to verify:</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6}
+                    value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onKeyDown={e => e.key === 'Enter' && code.length === 6 && handleVerify()}
+                    placeholder="000000"
+                    className="calc-input px-3 py-2 w-32 text-center font-mono tracking-widest text-lg"
+                  />
+                  <button type="button" onClick={handleVerify} disabled={saving || code.length !== 6}
+                    className="px-4 py-2 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition-colors">
+                    {saving ? 'Verifying…' : 'Enable MFA'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {status === 'backup' && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <span className="w-2 h-2 rounded-full bg-green-400 inline-block"></span>
+            <span className="text-sm text-green-400 font-medium">MFA enabled successfully</span>
+          </div>
+          <div className="bg-amber-900/20 border border-amber-700/40 rounded p-4">
+            <p className="text-sm text-amber-300 font-medium mb-2">Save your backup codes</p>
+            <p className="text-xs text-amber-400/80 mb-3">
+              Store these somewhere safe. Each code can only be used once if you lose access to your authenticator.
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {backup.map((c, i) => (
+                <span key={i} className="font-mono text-xs text-amber-200 bg-amber-900/30 rounded px-2 py-1 text-center">
+                  {c}
+                </span>
+              ))}
+            </div>
+          </div>
+          <button type="button" onClick={() => setStatus('enabled')}
+            className="self-start px-4 py-2 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+            Done
+          </button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Active Sessions section
+// ---------------------------------------------------------------------------
+function SessionsSection() {
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [err,      setErr]      = useState('')
+  const [deleting, setDeleting] = useState<number | null>(null)
+  const [signingOutAll, setSigningOutAll] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await apiFetch('/api/profile/sessions') as Session[]
+      setSessions(data)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load sessions')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleDelete = async (id: number, isCurrent: boolean) => {
+    setDeleting(id)
+    try {
+      const d = await apiFetch('/api/profile/sessions', 'DELETE', { id }) as { isCurrent?: boolean }
+      if (d.isCurrent || isCurrent) {
+        // Signing out own session — redirect to login
+        localStorage.removeItem('rf_token'); localStorage.removeItem('rf_user')
+        window.location.href = '/login'
+      } else {
+        setSessions(s => s.filter(x => x.id !== id))
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  const handleSignOutAll = async () => {
+    setSigningOutAll(true)
+    try {
+      await apiFetch('/api/profile/sessions?all=true', 'DELETE')
+      load()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setSigningOutAll(false)
+    }
+  }
+
+  function fmtDate(iso: string) {
+    return new Date(iso).toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    })
+  }
+
+  const others = sessions.filter(s => !s.isCurrent)
+
+  return (
+    <Card title="Active Sessions">
+      {err && <p className="text-red-400 text-sm mb-3">{err}</p>}
+
+      {loading ? (
+        <p className="text-gray-500 text-sm">Loading…</p>
+      ) : sessions.length === 0 ? (
+        <p className="text-gray-500 text-sm">No active sessions found.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left">
+                  <th className="text-xs text-gray-500 uppercase tracking-wider font-medium pb-3 pr-4">IP Address</th>
+                  <th className="text-xs text-gray-500 uppercase tracking-wider font-medium pb-3 pr-4">Created</th>
+                  <th className="text-xs text-gray-500 uppercase tracking-wider font-medium pb-3 pr-4">Expires</th>
+                  <th scope="col" className="text-xs text-gray-500 uppercase tracking-wider font-medium pb-3"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {sessions.map(s => (
+                  <tr key={s.id} className={s.isCurrent ? 'bg-blue-900/10' : ''}>
+                    <td className="py-3 pr-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-200 font-mono text-xs">{s.ip || '—'}</span>
+                        {s.isCurrent && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-700/40 whitespace-nowrap">
+                            Current
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3 pr-4 text-gray-400 text-xs whitespace-nowrap">{fmtDate(s.createdAt)}</td>
+                    <td className="py-3 pr-4 text-gray-400 text-xs whitespace-nowrap">{fmtDate(s.expiresAt)}</td>
+                    <td className="py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(s.id, s.isCurrent)}
+                        disabled={deleting === s.id}
+                        className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 transition-colors"
+                      >
+                        {deleting === s.id ? '…' : s.isCurrent ? 'Sign out' : 'Delete'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {others.length > 0 && (
+            <div className="flex justify-end pt-1 border-t border-white/5">
+              <button type="button" onClick={handleSignOutAll} disabled={signingOutAll}
+                className="text-xs text-gray-500 hover:text-gray-300 disabled:opacity-40 transition-colors">
+                {signingOutAll ? 'Signing out…' : 'Sign out all other sessions'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   )
 }
 
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
-const TIMEZONES = [
-  'Africa/Accra', 'Africa/Lagos', 'Europe/London', 'Europe/Paris',
-  'America/New_York', 'America/Los_Angeles', 'Asia/Tokyo', 'Australia/Sydney',
-]
-
 export default function ProfilePage() {
-  const [loading, setLoading] = useState(true)
-  const [saving,  setSaving]  = useState(false)
-  const [saved,   setSaved]   = useState(false)
-  const [error,   setError]   = useState('')
+  const [loading,      setLoading]      = useState(true)
+  const [firstName,    setFirstName]    = useState('')
+  const [lastName,     setLastName]     = useState('')
+  const [email,        setEmail]        = useState('')
+  const [accountName,  setAccountName]  = useState('')
+  const [showApiKey,   setShowApiKey]   = useState(false)
+  const [resetSent,    setResetSent]    = useState(false)
+  const [resetting,    setResetting]    = useState(false)
+  const [resetErr,     setResetErr]     = useState('')
+  const [error,        setError]        = useState('')
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ── Form state ──────────────────────────────────────────────────────────────
-  const [firstName, setFirstName] = useState('')
-  const [lastName,  setLastName]  = useState('')
-  const [email,     setEmail]     = useState('')
-  const [phone,     setPhone]     = useState('')
-  const [company,   setCompany]   = useState('')
-  const [country,   setCountry]   = useState('')
-  const [accountName, setAccountName] = useState('')
-  const [timezone,  setTimezone]  = useState('Africa/Accra')
-  const [isAdmin,   setIsAdmin]   = useState(false)
-  const [createdAt, setCreatedAt] = useState('')
-  const [jobCount,  setJobCount]  = useState<number | null>(null)
-  const [totalSpend, setTotalSpend] = useState<number | null>(null)
-
-  // Notification prefs (client-only for now)
-  const [emailNotifs,  setEmailNotifs]  = useState(true)
-  const [jobComplete,  setJobComplete]  = useState(true)
-  const [jobFailed,    setJobFailed]    = useState(true)
-  const [weeklyReport, setWeeklyReport] = useState(false)
-
-  // ── Load profile on mount ───────────────────────────────────────────────────
   const load = useCallback(async () => {
-    // Snapshot admin flag from client token immediately (no flicker)
-    const localUser = getUser()
-    if (localUser?.isAdmin) setIsAdmin(true)
-
     try {
-      const [data, jobs] = await Promise.all([
-        apiFetch('/api/profile') as Promise<{
-          firstName: string; lastName: string; email: string
-          phone: string; company: string; country: string
-          accountName: string; isAdmin: boolean; createdAt?: string
-        }>,
-        apiFetch('/api/jobs').catch(() => [] as unknown[]),
-      ])
+      const data = await apiFetch('/api/profile') as {
+        firstName: string; lastName: string; email: string; accountName: string
+      }
       setFirstName(data.firstName)
       setLastName(data.lastName)
       setEmail(data.email)
-      setPhone(data.phone ?? '')
-      setCompany(data.company ?? '')
-      setCountry(data.country ?? '')
-      setAccountName(data.accountName ?? '')
-      setIsAdmin(Boolean(data.isAdmin))
-      if (data.createdAt) setCreatedAt(data.createdAt)
-
-      // Compute stats from jobs list
-      if (Array.isArray(jobs)) {
-        setJobCount(jobs.length)
-        const spend = (jobs as Array<{ costUsd?: number }>)
-          .reduce((acc, j) => acc + (j.costUsd ?? 0), 0)
-        setTotalSpend(spend)
-      }
+      setAccountName(data.accountName)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load profile')
     } finally {
@@ -221,172 +470,100 @@ export default function ProfilePage() {
 
   useEffect(() => { load() }, [load])
 
-  // ── Save ────────────────────────────────────────────────────────────────────
-  const handleSave = async () => {
-    setSaving(true); setError('')
+  const handleResetPassword = async () => {
+    setResetting(true); setResetErr(''); setResetSent(false)
     try {
-      await apiFetch('/api/profile', 'PATCH', { firstName, lastName, phone, company, country })
-      setSaved(true); setTimeout(() => setSaved(false), 2500)
+      await apiFetch('/api/profile/reset-password', 'POST')
+      setResetSent(true)
+      if (resetTimerRef.current) clearTimeout(resetTimerRef.current)
+      resetTimerRef.current = setTimeout(() => setResetSent(false), 6000)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed')
+      setResetErr(e instanceof Error ? e.message : 'Failed to send reset email')
     } finally {
-      setSaving(false)
+      setResetting(false)
     }
   }
 
-  // ── Derived API key (JWT-based, deterministic per account) ──────────────────
-  // In production this would be a stored secret; here we use a stable placeholder.
-  const apiKeyDisplay = email
-    ? `rf_live_${btoa(email).replace(/[^a-z0-9]/gi, '').slice(0, 32).padEnd(32, '0')}`
-    : '—'
-
   if (loading) return (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      <h1 className="text-2xl font-semibold text-white tracking-tight">Profile</h1>
+    <div className="flex flex-col gap-6 max-w-4xl">
+      <h1 className="text-2xl font-semibold text-white tracking-tight">User Profile</h1>
       <p className="text-gray-500 text-sm py-10 text-center">Loading…</p>
     </div>
   )
 
+  const fullName = [firstName, lastName].filter(Boolean).join(' ') || '—'
+
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      <div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-2xl font-semibold text-white tracking-tight">Profile</h1>
-          {isAdmin && (
-            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-900/50 text-blue-300 border border-blue-700/40">
-              Admin
-            </span>
-          )}
-        </div>
-        <p className="mt-1 text-sm text-gray-500">
-          Manage your account details and preferences
-          {createdAt && (
-            <span className="ml-2 text-gray-600">
-              · Member since {new Date(createdAt).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
-            </span>
-          )}
-        </p>
-      </div>
+    <div className="flex flex-col gap-6 max-w-4xl">
+      <h1 className="text-2xl font-semibold text-white tracking-tight">User Profile</h1>
 
-      {/* Account stats strip */}
-      {jobCount !== null && (
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { label: 'Jobs submitted', value: String(jobCount) },
-            { label: 'Total spend',    value: `$${(totalSpend ?? 0).toFixed(2)}` },
-          ].map(({ label, value }) => (
-            <div key={label} className="calc-card text-center py-4">
-              <p className="text-2xl font-bold text-white">{value}</p>
-              <p className="text-xs text-gray-500 mt-1">{label}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {saved && (
-        <div className="enterprise-alert-success"><span>✓</span> Changes saved successfully</div>
-      )}
       {error && (
         <div className="text-red-400 text-sm bg-red-900/20 border border-red-900/40 rounded px-4 py-3">{error}</div>
       )}
 
-      {/* Personal Information */}
-      <Section title="Personal Information">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <FormField label="First Name" id="first-name">
-            <TextInput id="first-name" value={firstName} onChange={setFirstName} placeholder="First name" />
-          </FormField>
-          <FormField label="Last Name" id="last-name">
-            <TextInput id="last-name" value={lastName} onChange={setLastName} placeholder="Last name" />
-          </FormField>
-        </div>
-        <FormField label="Email Address" id="email">
-          <TextInput id="email" value={email} type="email" readOnly />
-        </FormField>
-        <FormField label="Account Name" id="account-name">
-          <TextInput id="account-name" value={accountName} readOnly />
-        </FormField>
-        <FormField label="Phone Number" id="phone">
-          <TextInput id="phone" value={phone} onChange={setPhone} type="tel" placeholder="+1 555 000 0000" />
-        </FormField>
-        <div className="flex justify-end pt-2">
-          <SaveBtn onClick={handleSave} saving={saving} />
-        </div>
-      </Section>
+      {/* Two-column top row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Profile Details */}
+        <Card title="Profile Details">
+          <div className="flex flex-col gap-4">
+            <ReadField label="Name"    value={fullName} />
+            <ReadField label="Email"   value={email} />
+            <ReadField label="Account" value={accountName} />
 
-      {/* Organization */}
-      <Section title="Organization">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <FormField label="Company / Studio" id="company">
-            <TextInput id="company" value={company} onChange={setCompany} placeholder="Your studio" />
-          </FormField>
-          <FormField label="Country" id="country">
-            <TextInput id="country" value={country} onChange={setCountry} placeholder="Country" />
-          </FormField>
-        </div>
-        <FormField label="Timezone" id="timezone">
-          <select id="timezone" title="Timezone" value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-            className="calc-input px-3 py-2">
-            {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
-          </select>
-        </FormField>
-        <div className="flex justify-end pt-2">
-          <SaveBtn onClick={handleSave} saving={saving} />
-        </div>
-      </Section>
+            <div className="pt-2 border-t border-white/5">
+              {resetSent && (
+                <p className="text-green-400 text-xs mb-2">✓ Password reset email sent to {email}</p>
+              )}
+              {resetErr && (
+                <p className="text-red-400 text-xs mb-2">{resetErr}</p>
+              )}
+              <button type="button" onClick={handleResetPassword} disabled={resetting}
+                className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors">
+                {resetting ? 'Sending…' : 'Reset Password'}
+              </button>
+              <span className="text-xs text-gray-600 ml-1">— we'll email you a reset link</span>
+            </div>
+          </div>
+        </Card>
 
-      {/* Change password */}
-      <ChangePasswordSection />
+        {/* API Key Instructions */}
+        <Card title="API Key Instructions">
+          <div className="flex flex-col gap-4 h-full">
+            <p className="text-sm text-gray-400">
+              Use your API key to authenticate with the Renderfarm API and CLI tools from scripts and pipelines.
+            </p>
+            <ul className="flex flex-col gap-2 text-xs text-gray-500">
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 text-gray-600">•</span>
+                Keep it secret — never commit to version control
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 text-gray-600">•</span>
+                Pass as <code className="text-gray-400 bg-white/5 px-1 rounded">Authorization: Bearer &lt;key&gt;</code>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 text-gray-600">•</span>
+                Regenerating immediately invalidates the old key
+              </li>
+            </ul>
+            <div className="mt-auto pt-2">
+              <button type="button" onClick={() => setShowApiKey(true)}
+                className="px-4 py-2 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+                Get API Key
+              </button>
+            </div>
+          </div>
+        </Card>
+      </div>
 
-      {/* API Key */}
-      <Section title="API Key">
-        <p className="text-sm text-gray-500">
-          Use this key to authenticate with the Renderfarm API and CLI tools.
-          Keep it secret — do not commit it to version control.
-        </p>
-        <FormField label="API Key" id="api-key">
-          <ApiKey value={apiKeyDisplay} />
-        </FormField>
-      </Section>
+      {/* MFA */}
+      <MfaSection />
 
-      {/* Notification Preferences */}
-      <Section title="Notification Preferences">
-        <div className="flex flex-col gap-3">
-          {[
-            { id: 'email-notifs',   label: 'Email notifications', sub: 'Receive emails for account events',         val: emailNotifs,  set: setEmailNotifs  },
-            { id: 'notif-complete', label: 'Job completed',        sub: 'Alert when a render job finishes',          val: jobComplete,  set: setJobComplete  },
-            { id: 'notif-failed',   label: 'Job failed',           sub: 'Alert when a job encounters an error',      val: jobFailed,    set: setJobFailed    },
-            { id: 'notif-weekly',   label: 'Weekly usage report',  sub: 'Summary of compute spend each week',        val: weeklyReport, set: setWeeklyReport },
-          ].map(({ id, label, sub, val, set }) => (
-            <label key={id} htmlFor={id}
-              className="flex items-start gap-3 cursor-pointer p-3 rounded-lg hover:bg-white/5 transition-colors">
-              <input type="checkbox" id={id} className="accent-blue-500 mt-0.5 shrink-0"
-                checked={val} onChange={() => set(v => !v)} />
-              <div>
-                <p className="text-sm text-gray-200">{label}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{sub}</p>
-              </div>
-            </label>
-          ))}
-        </div>
-        <div className="flex justify-end pt-2">
-          <SaveBtn onClick={handleSave} saving={saving} />
-        </div>
-      </Section>
+      {/* Active Sessions */}
+      <SessionsSection />
 
-      {/* Danger Zone */}
-      <Section title="Danger Zone">
-        <p className="text-sm text-gray-500">
-          Permanently delete your account and all associated data. This action cannot be undone.
-        </p>
-        <div>
-          <button type="button"
-            className="px-4 py-2 rounded text-sm font-medium text-red-400 border border-red-900/50 hover:bg-red-900/20 transition-colors">
-            Delete Account
-          </button>
-        </div>
-      </Section>
+      {/* API Key Modal */}
+      {showApiKey && <ApiKeyModal onClose={() => setShowApiKey(false)} />}
     </div>
   )
 }
