@@ -1728,22 +1728,30 @@ select.cost-limit-field {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.task-status--done     .task-status-dot { background: #4ade80; }
-.task-status--running  .task-status-dot { background: #fbbf24; }
-.task-status--failed   .task-status-dot { background: #f87171; }
-.task-status--holding  .task-status-dot { background: #f59e0b; }
-.task-status--pending  .task-status-dot { background: #6b7280; }
-.task-status--done      { color: #4ade80; }
-.task-status--running   { color: #fbbf24; }
-.task-status--failed    { color: #f87171; }
-.task-status--holding   { color: #fbbf24; }
-.task-status--pending   { color: #6b7280; }
-.task-status--preempted { color: #fb923c; }
-.task-status--reviewed  { color: #a78bfa; }
-.task-status--held      { color: #94a3b8; }
-.task-status--preempted .task-status-dot { background: #fb923c; }
-.task-status--reviewed  .task-status-dot { background: #a78bfa; }
-.task-status--held      .task-status-dot { background: #94a3b8; }
+.task-status--done       .task-status-dot { background: #4ade80; }
+.task-status--success    .task-status-dot { background: #3b82f6; }
+.task-status--complete   .task-status-dot { background: #3b82f6; }
+.task-status--downloaded .task-status-dot { background: #818cf8; }
+.task-status--running    .task-status-dot { background: #fbbf24; }
+.task-status--failed     .task-status-dot { background: #f87171; }
+.task-status--holding    .task-status-dot { background: #f59e0b; }
+.task-status--pending    .task-status-dot { background: #6b7280; }
+.task-status--killed     .task-status-dot { background: #6b7280; }
+.task-status--preempted  .task-status-dot { background: #fb923c; }
+.task-status--reviewed   .task-status-dot { background: #a78bfa; }
+.task-status--held       .task-status-dot { background: #94a3b8; }
+.task-status--done       { color: #4ade80; }
+.task-status--success    { color: #3b82f6; }
+.task-status--complete   { color: #3b82f6; }
+.task-status--downloaded { color: #818cf8; }
+.task-status--running    { color: #fbbf24; }
+.task-status--failed     { color: #f87171; }
+.task-status--holding    { color: #fbbf24; }
+.task-status--pending    { color: #6b7280; }
+.task-status--killed     { color: #6b7280; }
+.task-status--preempted  { color: #fb923c; }
+.task-status--reviewed   { color: #a78bfa; }
+.task-status--held       { color: #94a3b8; }
 
 /* scout badge inline chip */
 .scout-badge {
