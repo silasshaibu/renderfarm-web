@@ -206,21 +206,33 @@ export async function POST(req: NextRequest) {
         `
       }
 
-      // Spawn VMs only for scout chunks (or all if no scouts configured)
-      const toDispatch = hasScouts ? chunks.filter(c => c.isScout) : chunks
-      await spawnChunkVMs(
-        String(job.id), toDispatch, gcsScenePath,
-        machineType, preemptible, appUrl, INTERNAL_SECRET, software
-      )
-
-      const jobStatus = hasScouts ? 'running' : 'running'
+      // Update status to running BEFORE spawning VMs so it's always correct
       await sql`
         UPDATE jobs
-        SET status      = ${jobStatus},
+        SET status      = 'running',
             held_frames = '[]'::jsonb,
             updated_at  = NOW()
         WHERE id = ${job.id}
       `
+
+      // Spawn VMs only for scout chunks (or all if no scouts configured)
+      const toDispatch = hasScouts ? chunks.filter(c => c.isScout) : chunks
+      try {
+        await spawnChunkVMs(
+          String(job.id), toDispatch, gcsScenePath,
+          machineType, preemptible, appUrl, INTERNAL_SECRET, software
+        )
+      } catch (vmErr) {
+        const msg = vmErr instanceof Error ? vmErr.message : String(vmErr)
+        console.error('[jobs POST] GCP VM spawn failed:', msg)
+        // Write the error into status_description so dashboard shows it
+        await sql`
+          UPDATE jobs
+          SET status_description = ${'VM spawn failed: ' + msg},
+              updated_at         = NOW()
+          WHERE id = ${job.id}
+        `
+      }
     } catch (err) {
       console.error('[jobs POST] GCP dispatch failed:', err)
     }
