@@ -1499,11 +1499,11 @@ function SessionsTab() {
 
   // Find users with 2+ sessions
   const sessionCountByUser = sessions.reduce((acc, s) => {
-    const uid = s.user?.id ?? ''
+    const uid = s.user?.email ?? ''
     acc[uid] = (acc[uid] ?? 0) + 1
     return acc
   }, {} as Record<string, number>)
-  const multiSessionUsers = new Set(Object.entries(sessionCountByUser).filter(([, c]) => c > 1).map(([id]) => id))
+  const multiSessionUsers = new Set(Object.entries(sessionCountByUser).filter(([, c]) => c > 1).map(([email]) => email))
   const createdToday = sessions.filter(s => new Date(s.createdAt) > new Date(Date.now() - 86400_000)).length
 
   return (
@@ -1554,7 +1554,7 @@ function SessionsTab() {
               {sessions.length === 0 ? (
                 <tr><td colSpan={6} className="jobs-td text-center text-gray-600 py-6">No active sessions.</td></tr>
               ) : sessions.map(s => {
-                const isMulti = multiSessionUsers.has(s.user?.id ?? '')
+                const isMulti = multiSessionUsers.has(s.user?.email ?? '')
                 return (
                   <tr key={s.id} className={`jobs-tbody-row${isMulti ? ' border-l-2 border-amber-500/40' : ''}`}>
                     <td className="jobs-td font-mono text-xs text-gray-300">
