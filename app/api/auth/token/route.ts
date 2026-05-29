@@ -1,41 +1,20 @@
 /**
  * POST /api/auth/token — Blender addon authentication endpoint.
  *
- * Uses REUSE approach: if a valid addon session exists, extend and return it
- * rather than creating a new row. Repeated Connect presses = 1 session row.
+ * Matches the same 1-session-per-user policy as /api/auth/login:
+ * logging in from the addon replaces any existing session (browser or addon).
+ * 24-hour expiry, sliding renewal handled by verifyToken on every request.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { sql, initDB } from '@/lib/db'
-import { JWT_SECRET, makeJti } from '@/lib/auth-server'
+import { JWT_SECRET, SESSION_TTL_MS, makeJti } from '@/lib/auth-server'
 import { rateLimit, getIP, retryMessage } from '@/lib/rateLimit'
-
-const SESSION_HARD_LIMIT = 5
-const SOURCE    = 'addon'
-const EXPIRY_MS = 30 * 24 * 60 * 60 * 1000  // 30 days
-
-async function enforceSessionLimit(userId: number) {
-  await sql`
-    DELETE FROM user_sessions
-    WHERE user_id = ${userId}
-      AND id NOT IN (
-        SELECT id FROM user_sessions
-        WHERE user_id = ${userId}
-          AND revoked = FALSE
-          AND expires_at > NOW()
-        ORDER BY last_used_at DESC NULLS LAST
-        LIMIT ${SESSION_HARD_LIMIT}
-      )
-      AND revoked = FALSE
-      AND expires_at > NOW()
-  `.catch(() => null)
-}
 
 export async function POST(req: NextRequest) {
   try {
     const { email, password } = await req.json() as { email?: string; password?: string }
-
     if (!email || !password) {
       return NextResponse.json({ message: 'Email and password are required' }, { status: 400 })
     }
@@ -52,13 +31,14 @@ export async function POST(req: NextRequest) {
     }
 
     const rows = await sql`SELECT * FROM users WHERE email = ${email.toLowerCase()} LIMIT 1`
-    if (!rows.length) {
-      return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 })
+    if (!rows.length) return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 })
+
+    const user = rows[0] as {
+      id: number; email: string; password_hash: string
+      is_admin: boolean; status?: string; suspension_reason?: string
     }
 
-    const user  = rows[0] as { id: number; email: string; password_hash: string; is_admin: boolean; status?: string; suspension_reason?: string }
-    const valid = await bcrypt.compare(password, user.password_hash)
-    if (!valid) {
+    if (!await bcrypt.compare(password, user.password_hash)) {
       return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 })
     }
 
@@ -72,48 +52,24 @@ export async function POST(req: NextRequest) {
     await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'dashboard'`.catch(() => null)
     await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ DEFAULT NULL`.catch(() => null)
 
-    const expiresAt = new Date(Date.now() + EXPIRY_MS)
+    // Strict 1-session-per-user: replace all existing sessions
+    await sql`DELETE FROM user_sessions WHERE user_id = ${user.id}`.catch(() => null)
 
-    // REUSE approach for addon: same session returned on repeated Connect presses
-    const existingSess = await sql`
-      SELECT id, jti FROM user_sessions
-      WHERE user_id = ${user.id}
-        AND source = ${SOURCE}
-        AND revoked = FALSE
-        AND expires_at > NOW()
-      ORDER BY last_used_at DESC NULLS LAST
-      LIMIT 1
-    ` as Record<string, unknown>[]
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS)
+    const jti       = makeJti()
 
-    if (existingSess.length > 0) {
-      const ex = existingSess[0]
-      await sql`UPDATE user_sessions SET expires_at = ${expiresAt.toISOString()}, last_used_at = NOW() WHERE id = ${ex.id}`
-      const reuseToken = jwt.sign(
-        { sub: String(user.id), email: user.email, isAdmin: user.is_admin, jti: ex.jti },
-        JWT_SECRET,
-        { expiresIn: '30d' },
-      )
-      return NextResponse.json({
-        access_token: reuseToken,
-        user: { id: String(user.id), email: user.email, isAdmin: user.is_admin },
-      })
-    }
-
-    const jti          = makeJti()
     const access_token = jwt.sign(
       { sub: String(user.id), email: user.email, isAdmin: user.is_admin, jti },
       JWT_SECRET,
-      { expiresIn: '30d' },
+      { expiresIn: '90d' },
     )
 
     const userAgent = req.headers.get('user-agent') ?? ''
     await sql`
-      INSERT INTO user_sessions (user_id, jti, ip_address, user_agent, expires_at, source)
-      VALUES (${user.id}, ${jti}, ${ip}, ${userAgent}, ${expiresAt.toISOString()}, ${SOURCE})
+      INSERT INTO user_sessions (user_id, jti, ip_address, user_agent, expires_at, source, last_used_at)
+      VALUES (${user.id}, ${jti}, ${ip}, ${userAgent}, ${expiresAt.toISOString()}, 'addon', NOW())
       ON CONFLICT (jti) DO NOTHING
     `
-
-    await enforceSessionLimit(user.id)
 
     return NextResponse.json({
       access_token,

@@ -1,9 +1,9 @@
 /**
- * GET /api/auth/cleanup — session maintenance cron job (runs hourly via vercel.json).
+ * GET /api/auth/cleanup — session maintenance cron (daily via vercel.json).
  *
  * Step 1: Delete all expired sessions.
- * Step 2: Backfill — for each (user_id, source) keep only the most recent valid session,
- *         deleting older duplicates accumulated before the dedup fix landed.
+ * Step 2: Enforce 1-session-per-user hard limit — keep only the most recent
+ *         active session per user, delete all others.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { sql, initDB } from '@/lib/db'
@@ -12,8 +12,7 @@ import { verifyToken } from '@/lib/auth-server'
 const CRON_SECRET = process.env.CRON_SECRET ?? ''
 
 export async function GET(req: NextRequest) {
-  // Allow: Vercel cron with CRON_SECRET header, OR an authenticated admin user
-  const auth = req.headers.get('authorization') ?? ''
+  const auth    = req.headers.get('authorization') ?? ''
   const isCron  = CRON_SECRET ? auth === `Bearer ${CRON_SECRET}` : true
   const isAdmin = !isCron ? await verifyToken(req).then(u => u?.isAdmin ?? false).catch(() => false) : false
   if (!isCron && !isAdmin) {
@@ -22,7 +21,6 @@ export async function GET(req: NextRequest) {
 
   await initDB()
 
-  // Ensure columns exist before querying them
   await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'dashboard'`.catch(() => null)
   await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ DEFAULT NULL`.catch(() => null)
 
@@ -32,14 +30,14 @@ export async function GET(req: NextRequest) {
     RETURNING id
   ` as Record<string, unknown>[]
 
-  // Step 2: backfill — per (user_id, source) keep only the newest valid session
+  // Step 2: enforce 1-session-per-user — keep only the newest active session per user
   const dupes = await sql`
     DELETE FROM user_sessions
     WHERE id NOT IN (
-      SELECT DISTINCT ON (user_id, source) id
+      SELECT DISTINCT ON (user_id) id
       FROM user_sessions
       WHERE expires_at > NOW() AND revoked = FALSE
-      ORDER BY user_id, source, created_at DESC
+      ORDER BY user_id, last_used_at DESC NULLS LAST
     )
     AND expires_at > NOW()
     AND revoked = FALSE
@@ -48,7 +46,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    expiredDeleted:   deleted.length,
+    expiredDeleted:    deleted.length,
     duplicatesRemoved: dupes.length,
   })
 }

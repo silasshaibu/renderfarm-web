@@ -457,7 +457,7 @@ function SessionsSection() {
 
           <div className="flex items-center justify-between pt-1 border-t border-white/5">
             <p className="text-xs text-gray-600">
-              Each device type can only have 1 active session at a time. Signing in on a new device automatically signs out the previous one.
+              Sessions expire after 24 hours of inactivity. Signing in anywhere replaces your existing session — only 1 active session per account at a time.
             </p>
             {others.length > 0 && (
               <button type="button" onClick={handleSignOutAll} disabled={signingOutAll}

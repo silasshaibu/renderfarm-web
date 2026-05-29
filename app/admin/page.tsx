@@ -1524,7 +1524,7 @@ function SessionsTab() {
 
       {/* Policy notice */}
       <p className="text-xs text-gray-600 mb-4 px-1">
-        Session policy: max 1 per source per user · max 5 total per user · dashboard sessions expire 7 days · addon sessions expire 30 days
+        Session policy: 1 active session per user at all times · sessions expire after 24 h inactivity · auto-renewed while actively using the platform
       </p>
 
       <div className="flex items-center justify-between mb-4">
@@ -1581,7 +1581,7 @@ function SessionsTab() {
           </table>
         </div>
       )}
-      <p className="text-xs text-gray-600 mt-3">Auto-refreshes every 30 seconds. Cleanup runs daily via cron.</p>
+      <p className="text-xs text-gray-600 mt-3">Auto-refreshes every 30 seconds. Sessions expire after 24 h of inactivity and auto-renew on activity. Cleanup runs daily via cron.</p>
     </div>
   )
 }
