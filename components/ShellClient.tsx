@@ -56,7 +56,7 @@ export default function ShellClient({ children }: { children: React.ReactNode })
   const pathname     = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  if (AUTH_PATHS.includes(pathname)) {
+  if (AUTH_PATHS.includes(pathname) || pathname.startsWith('/cms')) {
     return <>{children}</>
   }
 
