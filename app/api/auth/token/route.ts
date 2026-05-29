@@ -1,11 +1,8 @@
 /**
  * POST /api/auth/token — Blender addon authentication endpoint.
  *
- * Identical to /api/auth/login but:
- *  - source = 'addon'
- *  - sessions expire after 30 days (so artists don't need to reconnect frequently)
- *  - deduplicates by (user_id, source='addon') so repeated Connect presses
- *    reuse the existing session rather than creating new rows
+ * Uses REUSE approach: if a valid addon session exists, extend and return it
+ * rather than creating a new row. Repeated Connect presses = 1 session row.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
@@ -13,6 +10,27 @@ import bcrypt from 'bcryptjs'
 import { sql, initDB } from '@/lib/db'
 import { JWT_SECRET, makeJti } from '@/lib/auth-server'
 import { rateLimit, getIP, retryMessage } from '@/lib/rateLimit'
+
+const SESSION_HARD_LIMIT = 5
+const SOURCE    = 'addon'
+const EXPIRY_MS = 30 * 24 * 60 * 60 * 1000  // 30 days
+
+async function enforceSessionLimit(userId: number) {
+  await sql`
+    DELETE FROM user_sessions
+    WHERE user_id = ${userId}
+      AND id NOT IN (
+        SELECT id FROM user_sessions
+        WHERE user_id = ${userId}
+          AND revoked = FALSE
+          AND expires_at > NOW()
+        ORDER BY last_used_at DESC NULLS LAST
+        LIMIT ${SESSION_HARD_LIMIT}
+      )
+      AND revoked = FALSE
+      AND expires_at > NOW()
+  `.catch(() => null)
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -51,22 +69,19 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Ensure source column exists
     await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'dashboard'`.catch(() => null)
     await sql`ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ DEFAULT NULL`.catch(() => null)
 
-    const SOURCE    = 'addon'
-    const EXPIRY_MS = 30 * 24 * 60 * 60 * 1000  // 30 days
     const expiresAt = new Date(Date.now() + EXPIRY_MS)
 
-    // Dedup: reuse the most recent valid addon session instead of creating a new row
+    // REUSE approach for addon: same session returned on repeated Connect presses
     const existingSess = await sql`
       SELECT id, jti FROM user_sessions
       WHERE user_id = ${user.id}
         AND source = ${SOURCE}
         AND revoked = FALSE
         AND expires_at > NOW()
-      ORDER BY created_at DESC
+      ORDER BY last_used_at DESC NULLS LAST
       LIMIT 1
     ` as Record<string, unknown>[]
 
@@ -97,6 +112,8 @@ export async function POST(req: NextRequest) {
       VALUES (${user.id}, ${jti}, ${ip}, ${userAgent}, ${expiresAt.toISOString()}, ${SOURCE})
       ON CONFLICT (jti) DO NOTHING
     `
+
+    await enforceSessionLimit(user.id)
 
     return NextResponse.json({
       access_token,

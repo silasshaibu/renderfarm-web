@@ -384,7 +384,9 @@ function SessionsSection() {
     })
   }
 
-  const others = sessions.filter(s => !s.isCurrent)
+  const others       = sessions.filter(s => !s.isCurrent)
+  const sourceCount  = new Set(sessions.map(s => s.source)).size
+  const tooManySessions = sessions.length > 3
 
   return (
     <Card title="Active Sessions">
@@ -396,6 +398,19 @@ function SessionsSection() {
         <p className="text-gray-500 text-sm">No active sessions found.</p>
       ) : (
         <div className="flex flex-col gap-3">
+          {/* Summary */}
+          <p className="text-xs text-gray-500">
+            {sessions.length} active session{sessions.length !== 1 ? 's' : ''} across {sourceCount} device type{sourceCount !== 1 ? 's' : ''}
+          </p>
+
+          {/* Unusual activity warning */}
+          {tooManySessions && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded bg-amber-900/20 border border-amber-500/30 text-amber-300 text-xs">
+              <span>⚠</span>
+              <span>Unusual session activity detected. If you don&apos;t recognise all these sessions, sign out all others and change your password.</span>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -428,9 +443,10 @@ function SessionsSection() {
                         type="button"
                         onClick={() => handleDelete(s.id, s.isCurrent)}
                         disabled={deleting === s.id}
+                        title={s.isCurrent ? 'Signs you out of the current browser session' : 'Sign out this session'}
                         className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 transition-colors"
                       >
-                        {deleting === s.id ? '…' : s.isCurrent ? 'Sign out' : 'Delete'}
+                        {deleting === s.id ? '…' : 'Sign out'}
                       </button>
                     </td>
                   </tr>
@@ -439,14 +455,17 @@ function SessionsSection() {
             </table>
           </div>
 
-          {others.length > 0 && (
-            <div className="flex justify-end pt-1 border-t border-white/5">
+          <div className="flex items-center justify-between pt-1 border-t border-white/5">
+            <p className="text-xs text-gray-600">
+              Each device type can only have 1 active session at a time. Signing in on a new device automatically signs out the previous one.
+            </p>
+            {others.length > 0 && (
               <button type="button" onClick={handleSignOutAll} disabled={signingOutAll}
-                className="text-xs text-gray-500 hover:text-gray-300 disabled:opacity-40 transition-colors">
-                {signingOutAll ? 'Signing out…' : 'Sign out all other sessions'}
+                className="text-xs text-gray-500 hover:text-gray-300 disabled:opacity-40 transition-colors whitespace-nowrap ml-4 shrink-0">
+                {signingOutAll ? 'Signing out…' : `Sign out all other sessions (${others.length})`}
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </Card>

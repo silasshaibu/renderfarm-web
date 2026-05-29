@@ -1497,15 +1497,43 @@ function SessionsTab() {
     } catch { return iso }
   }
 
+  // Find users with 2+ sessions
+  const sessionCountByUser = sessions.reduce((acc, s) => {
+    const uid = s.user?.id ?? ''
+    acc[uid] = (acc[uid] ?? 0) + 1
+    return acc
+  }, {} as Record<string, number>)
+  const multiSessionUsers = new Set(Object.entries(sessionCountByUser).filter(([, c]) => c > 1).map(([id]) => id))
+  const createdToday = sessions.filter(s => new Date(s.createdAt) > new Date(Date.now() - 86400_000)).length
+
   return (
     <div className="admin-panel">
+      {/* Summary strip */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        {[
+          { label: 'Total Active', value: sessions.length },
+          { label: 'Users w/ 2+ Sessions', value: multiSessionUsers.size },
+          { label: 'Created Today', value: createdToday },
+        ].map(({ label, value }) => (
+          <div key={label} className="px-3 py-2 rounded bg-white/3 border border-white/8 text-center">
+            <div className="text-lg font-bold text-gray-200">{value}</div>
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Policy notice */}
+      <p className="text-xs text-gray-600 mb-4 px-1">
+        Session policy: max 1 per source per user · max 5 total per user · dashboard sessions expire 7 days · addon sessions expire 30 days
+      </p>
+
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-gray-200">Active Sessions</h3>
         <div className="flex items-center gap-3">
           {syncing && <span className="text-xs text-gray-500">Refreshing…</span>}
           <button type="button" onClick={handleCleanUp} disabled={cleaning}
             className="text-xs px-3 py-1.5 rounded border border-amber-500/30 text-amber-400 hover:border-amber-500/60 hover:text-amber-300 transition-colors disabled:opacity-50">
-            {cleaning ? 'Cleaning…' : 'Clean Up Duplicates'}
+            {cleaning ? 'Cleaning…' : 'Run Session Cleanup'}
           </button>
           <GrayBtn label="Refresh" onClick={() => refetch()} />
         </div>
@@ -1525,29 +1553,35 @@ function SessionsTab() {
             <tbody>
               {sessions.length === 0 ? (
                 <tr><td colSpan={6} className="jobs-td text-center text-gray-600 py-6">No active sessions.</td></tr>
-              ) : sessions.map(s => (
-                <tr key={s.id} className="jobs-tbody-row">
-                  <td className="jobs-td font-mono text-xs text-gray-300">{s.user?.email ?? '—'}</td>
-                  <td className="jobs-td font-mono text-xs text-gray-400">{s.ip ?? '—'}</td>
-                  <td className="jobs-td">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap ${SESSION_SOURCE_STYLES[s.source] ?? SESSION_SOURCE_STYLES.api}`}>
-                      {s.source ?? 'dashboard'}
-                    </span>
-                  </td>
-                  <td className="jobs-td text-xs text-gray-400 whitespace-nowrap">{fmt(s.createdAt)}</td>
-                  <td className="jobs-td text-xs text-gray-400 whitespace-nowrap">{fmt(s.expiresAt)}</td>
-                  <td className="jobs-td">
-                    <GrayBtn label={deleting === s.id ? '…' : 'Delete'}
-                      disabled={deleting === s.id}
-                      onClick={() => handleDelete(s.id)} />
-                  </td>
-                </tr>
-              ))}
+              ) : sessions.map(s => {
+                const isMulti = multiSessionUsers.has(s.user?.id ?? '')
+                return (
+                  <tr key={s.id} className={`jobs-tbody-row${isMulti ? ' border-l-2 border-amber-500/40' : ''}`}>
+                    <td className="jobs-td font-mono text-xs text-gray-300">
+                      {s.user?.email ?? '—'}
+                      {isMulti && <span className="ml-1.5 text-[10px] text-amber-400/70">multi</span>}
+                    </td>
+                    <td className="jobs-td font-mono text-xs text-gray-400">{s.ip ?? '—'}</td>
+                    <td className="jobs-td">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap ${SESSION_SOURCE_STYLES[s.source] ?? SESSION_SOURCE_STYLES.api}`}>
+                        {s.source ?? 'dashboard'}
+                      </span>
+                    </td>
+                    <td className="jobs-td text-xs text-gray-400 whitespace-nowrap">{fmt(s.createdAt)}</td>
+                    <td className="jobs-td text-xs text-gray-400 whitespace-nowrap">{fmt(s.expiresAt)}</td>
+                    <td className="jobs-td">
+                      <GrayBtn label={deleting === s.id ? '…' : 'Terminate'}
+                        disabled={deleting === s.id}
+                        onClick={() => handleDelete(s.id)} />
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
       )}
-      <p className="text-xs text-gray-600 mt-3">Auto-refreshes every 30 seconds. Cleanup also runs automatically every hour.</p>
+      <p className="text-xs text-gray-600 mt-3">Auto-refreshes every 30 seconds. Cleanup runs daily via cron.</p>
     </div>
   )
 }
