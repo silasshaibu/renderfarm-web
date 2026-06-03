@@ -436,6 +436,103 @@ function NotificationsSection() {
   )
 }
 
+// Storage Settings section
+// ---------------------------------------------------------------------------
+function StorageSettingsSection() {
+  const [autoPurgeDays, setAutoPurgeDays] = useState(20)
+  const [costAlert, setCostAlert] = useState(5.00)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    apiFetch('/api/profile/storage-settings')
+      .then(d => {
+        setAutoPurgeDays((d as { autoPurgeDays: number }).autoPurgeDays)
+        setCostAlert((d as { costAlertThreshold: number }).costAlertThreshold)
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      await apiFetch('/api/profile/storage-settings', 'POST', {
+        autoPurgeDays,
+        costAlertThreshold: costAlert,
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card title="Storage Settings">
+      <div className="flex flex-col gap-4">
+        {error && <p className="text-red-400 text-sm">{error}</p>}
+        {saved && <p className="text-green-400 text-sm">✓ Settings saved</p>}
+
+        {loading ? (
+          <p className="text-gray-500 text-sm">Loading...</p>
+        ) : (
+          <>
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider font-medium block mb-2">
+                Auto-purge Inactive Files (days)
+              </label>
+              <input
+                type="number"
+                min="7"
+                max="90"
+                value={autoPurgeDays}
+                onChange={(e) => setAutoPurgeDays(parseInt(e.target.value, 10))}
+                aria-label="Auto-purge inactive files (days)"
+                className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 text-sm text-white"
+              />
+              <p className="text-xs text-gray-500 mt-1">Files not visited for this long will be automatically deleted</p>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider font-medium block mb-2">
+                Storage Cost Alert ($/month)
+              </label>
+              <input
+                type="number"
+                min="0.50"
+                max="100"
+                step="0.50"
+                value={costAlert}
+                onChange={(e) => setCostAlert(parseFloat(e.target.value))}
+                aria-label="Storage cost alert threshold"
+                className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 text-sm text-white"
+              />
+              <p className="text-xs text-gray-500 mt-1">You'll get an email alert if monthly cost exceeds this amount</p>
+            </div>
+
+            <div className="pt-2 border-t border-white/5">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="px-4 py-2 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white transition-colors"
+              >
+                {saving ? 'Saving…' : 'Save Settings'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 // Active Sessions section
 // ---------------------------------------------------------------------------
 function SessionsSection() {
@@ -848,6 +945,9 @@ export default function ProfilePage() {
 
       {/* MFA */}
       <MfaSection />
+
+      {/* Storage Settings */}
+      <StorageSettingsSection />
 
       {/* Active Sessions */}
       <SessionsSection />
