@@ -5,6 +5,10 @@
  * Credits are consumed as jobs render (negative entries).
  * Balance = SUM(amount) for a given user.
  *
+ * Storage billing: $0.10/GB/month, billed daily.
+ * Auto-purge: 20 days of inactivity (resets on each visit).
+ * Overdraft limit: -$5.00 (not -$20).
+ *
  * Account deletion is disabled to prevent users from deleting and
  * recreating accounts to claim the $25 welcome bonus multiple times.
  * Only admins can deactivate accounts via /admin/users.
@@ -13,9 +17,77 @@ import { sql } from './db'
 import { sendEmail, baseUrl } from './email'
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+export const STORAGE_PRICE_PER_GB_MONTH = 0.10
+export const STORAGE_PURGE_DAYS = 20  // if user hasn't visited in 20 days
+export const STORAGE_WARN_DAYS_BEFORE = 7  // notify 7 days before purge
+export const OVERDRAFT_LIMIT_DEFAULT = -5.00  // changed from -20 to -5
+
+// ---------------------------------------------------------------------------
 // Schema setup (lazy — idempotent)
 // ---------------------------------------------------------------------------
 export async function ensureCreditSchema() {
+  // Storage billing table
+  await sql`
+    CREATE TABLE IF NOT EXISTS storage_billing (
+      id               SERIAL PRIMARY KEY,
+      user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      file_path        TEXT NOT NULL,
+      file_name        TEXT NOT NULL,
+      md5_hash         TEXT NOT NULL,
+      file_size_bytes  BIGINT DEFAULT 0,
+      file_type        VARCHAR CHECK (file_type IN ('asset','output')),
+      job_id           INTEGER REFERENCES jobs(id),
+      uploaded_at      TIMESTAMPTZ DEFAULT NOW(),
+      purged_at        TIMESTAMPTZ NULL,
+      last_billed_at   TIMESTAMPTZ,
+      total_billed     DECIMAL(12,4) DEFAULT 0.00,
+      is_active        BOOLEAN DEFAULT true
+    )
+  `.catch(() => null)
+  await sql`CREATE INDEX IF NOT EXISTS idx_storage_user_active ON storage_billing(user_id, is_active)`.catch(() => null)
+  await sql`CREATE INDEX IF NOT EXISTS idx_storage_md5 ON storage_billing(md5_hash)`.catch(() => null)
+
+  // IP blocklist table
+  await sql`
+    CREATE TABLE IF NOT EXISTS ip_blocklist (
+      id               SERIAL PRIMARY KEY,
+      ip_address       VARCHAR NOT NULL UNIQUE,
+      reason           VARCHAR,
+      blocked_at       TIMESTAMPTZ DEFAULT NOW(),
+      blocked_by       VARCHAR DEFAULT 'system',
+      expires_at       TIMESTAMPTZ NULL,
+      reviewed         BOOLEAN DEFAULT false,
+      notes            TEXT
+    )
+  `.catch(() => null)
+  await sql`CREATE INDEX IF NOT EXISTS idx_ip_blocklist ON ip_blocklist(ip_address)`.catch(() => null)
+
+  // Blocked attempts log
+  await sql`
+    CREATE TABLE IF NOT EXISTS blocked_attempts (
+      id               SERIAL PRIMARY KEY,
+      ip_address       VARCHAR,
+      attempted_at     TIMESTAMPTZ DEFAULT NOW(),
+      endpoint         VARCHAR,
+      user_agent       VARCHAR
+    )
+  `.catch(() => null)
+  await sql`CREATE INDEX IF NOT EXISTS idx_blocked_ip ON blocked_attempts(ip_address)`.catch(() => null)
+  await sql`CREATE INDEX IF NOT EXISTS idx_blocked_time ON blocked_attempts(attempted_at)`.catch(() => null)
+
+  // Abuse scores
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_abuse_scores (
+      user_id          INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      score            INTEGER DEFAULT 0,
+      last_updated     TIMESTAMPTZ DEFAULT NOW(),
+      auto_suspended   BOOLEAN DEFAULT false
+    )
+  `.catch(() => null)
+
+  // Credits table
   await sql`
     CREATE TABLE IF NOT EXISTS credits (
       id          SERIAL PRIMARY KEY,
@@ -67,11 +139,22 @@ export async function ensureCreditSchema() {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS low_balance_notified_at TIMESTAMPTZ DEFAULT NULL`
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_bonus_claimed BOOLEAN DEFAULT FALSE`
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_limit        NUMERIC(12,4) DEFAULT 0`
-  // Overdraft system
-  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS overdraft_limit     NUMERIC(12,4) DEFAULT -20.00`
+  // Overdraft system (limit is now -$5, not -$20)
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS overdraft_limit     NUMERIC(12,4) DEFAULT -5.00`
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS overdraft_notified  BOOLEAN DEFAULT FALSE`
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS debt_hold_since     TIMESTAMPTZ DEFAULT NULL`
+  // Storage & uploads
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_visited_at     TIMESTAMPTZ DEFAULT NULL`
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS uploads_blocked     BOOLEAN DEFAULT FALSE`
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS upload_limit_multiplier DECIMAL DEFAULT 1.0`
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_auto_purge_days INTEGER DEFAULT 20`
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_cost_alert  DECIMAL DEFAULT 5.00`
+  // Jobs
   await sql`ALTER TABLE jobs  ADD COLUMN IF NOT EXISTS held_for_debt       BOOLEAN DEFAULT FALSE`.catch(() => null)
+  // Abuse signals enhancements
+  await sql`ALTER TABLE abuse_signals ADD COLUMN IF NOT EXISTS severity    VARCHAR DEFAULT 'medium'`.catch(() => null)
+  await sql`ALTER TABLE abuse_signals ADD COLUMN IF NOT EXISTS auto_actioned BOOLEAN DEFAULT false`.catch(() => null)
+  await sql`ALTER TABLE abuse_signals ADD COLUMN IF NOT EXISTS ip_address  VARCHAR`.catch(() => null)
 }
 
 // ---------------------------------------------------------------------------
@@ -261,8 +344,7 @@ export async function maybeSendLowBalanceEmail(userId: number, email: string, ba
 // ---------------------------------------------------------------------------
 // Overdraft system
 // ---------------------------------------------------------------------------
-
-export const OVERDRAFT_LIMIT_DEFAULT = -20.00  // $-20 hard stop
+// (OVERDRAFT_LIMIT_DEFAULT already defined at top as -5.00)
 
 /** Check balance after a deduction and take action if overdraft is exceeded. */
 export async function checkOverdraftStatus(userId: number, balance: number): Promise<void> {
