@@ -4,6 +4,7 @@ import { use, useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { jobs as jobsApi, type ApiJob } from '@/lib/api'
 import { getToken, getUser } from '@/lib/auth'
+import ReRenderModal from '@/components/ReRenderModal'
 
 // ── Scout Frames modal ────────────────────────────────────────────────────────
 function ScoutModal({
@@ -311,6 +312,12 @@ export default function JobDetailPage({ params }: PageProps) {
   const [scoutCreated,    setScoutCreated]    = useState('')
   const [approvingScouts, setApprovingScouts] = useState(false)
   const [approveMsg,      setApproveMsg]      = useState('')
+  const [showReRender,    setShowReRender]    = useState(false)
+  const [rerenderHistory, setRerenderHistory] = useState<{
+    originalJob: { jobNumber: string; frameRange: string; status: string; createdAt: string; costUsd: number }
+    rerenders: { id: string; jobNumber: string; title: string; frameRange: string; status: string; createdAt: string; costUsd: number; rerenderNumber: number }[]
+    totalRerenders: number
+  } | null>(null)
   const [taskVisibleCols, setTaskVisibleCols] = useState<Set<TaskColKey>>(
     new Set(TASK_COLUMNS.map(c => c.key)) // all columns visible by default
   )
@@ -331,12 +338,22 @@ export default function JobDetailPage({ params }: PageProps) {
     } catch { /* non-critical */ }
   }, [])
 
+  const loadRerenderHistory = useCallback(async (jobNum: string) => {
+    try {
+      const token = getToken() ?? ''
+      const res = await fetch(`/api/jobs/${jobNum}/rerenders`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) setRerenderHistory(await res.json())
+    } catch { /* non-critical */ }
+  }, [])
+
   const load = useCallback(async (silent = false) => {
     try {
       const data = await jobsApi.get(id)
       setJob(data); setError('')
-      // Load per-frame timing alongside job data
       await loadTimings(id)
+      await loadRerenderHistory(String(data.jobNumber))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load job')
     } finally {
@@ -734,6 +751,18 @@ export default function JobDetailPage({ params }: PageProps) {
                 )}
               </div>
             )}
+
+            {/* Re-render button — shown for terminal statuses */}
+            {job && ['success', 'failed', 'killed', 'downloaded'].includes(job.status) && (
+              <button type="button"
+                onClick={() => setShowReRender(true)}
+                className="mt-3 px-4 py-1.5 rounded-lg text-xs font-medium border border-blue-500/40 text-blue-400 hover:border-blue-400/60 hover:text-blue-300 transition-colors flex items-center gap-1.5">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.57-4"/>
+                </svg>
+                Re-render
+              </button>
+            )}
           </div>
         </div>
 
@@ -906,6 +935,107 @@ export default function JobDetailPage({ params }: PageProps) {
           frameEnd={end}
           onClose={() => setShowScout(false)}
           onCreated={num => setScoutCreated(num)}
+        />
+      )}
+
+      {/* ── Re-render history section ─────────────────────────────────────── */}
+      {rerenderHistory && (
+        <div className="job-detail-card">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-gray-200">Re-render History</h3>
+            {job && ['success', 'failed', 'killed', 'downloaded'].includes(job.status) && (
+              <button type="button" onClick={() => setShowReRender(true)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-blue-500/40 text-blue-400 hover:border-blue-400 transition-colors">
+                Re-render again
+              </button>
+            )}
+          </div>
+
+          {rerenderHistory.totalRerenders === 0 ? (
+            <div className="text-center py-6">
+              <p className="text-sm text-gray-500">This job has not been re-rendered yet.</p>
+              {job && ['success', 'failed', 'killed', 'downloaded'].includes(job.status) && (
+                <button type="button" onClick={() => setShowReRender(true)}
+                  className="mt-3 px-4 py-2 rounded-lg text-sm font-medium border border-blue-500/40 text-blue-400 hover:border-blue-400 transition-colors">
+                  Re-render with new frame range
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500 mb-3">
+                This job has been re-rendered {rerenderHistory.totalRerenders} time{rerenderHistory.totalRerenders !== 1 ? 's' : ''}.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="jobs-thead-row">
+                      {['JOB ID', 'FRAMES', 'STATUS', 'DATE', 'COST'].map(h => (
+                        <th key={h} className="jobs-th">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Original row */}
+                    <tr className="jobs-tbody-row border-l-2 border-blue-500/30">
+                      <td className="jobs-td">
+                        <Link href={`/jobs/${rerenderHistory.originalJob.jobNumber}`}
+                          className="font-mono text-xs text-blue-400 hover:text-blue-300">
+                          {rerenderHistory.originalJob.jobNumber}
+                        </Link>
+                        <span className="ml-2 text-[10px] text-gray-600">original</span>
+                      </td>
+                      <td className="jobs-td font-mono text-xs text-gray-300">{rerenderHistory.originalJob.frameRange}</td>
+                      <td className="jobs-td text-xs text-gray-400">{rerenderHistory.originalJob.status}</td>
+                      <td className="jobs-td text-xs text-gray-500 whitespace-nowrap">
+                        {new Date(rerenderHistory.originalJob.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="jobs-td text-xs text-gray-400">
+                        {rerenderHistory.originalJob.costUsd > 0 ? `$${rerenderHistory.originalJob.costUsd.toFixed(4)}` : '—'}
+                      </td>
+                    </tr>
+                    {rerenderHistory.rerenders.map(r => (
+                      <tr key={r.id} className="jobs-tbody-row">
+                        <td className="jobs-td">
+                          <Link href={`/jobs/${r.jobNumber}`}
+                            className="font-mono text-xs text-gray-300 hover:text-white">
+                            🔄 {r.jobNumber}
+                          </Link>
+                        </td>
+                        <td className="jobs-td font-mono text-xs text-gray-300">{r.frameRange}</td>
+                        <td className="jobs-td text-xs text-gray-400">{r.status}</td>
+                        <td className="jobs-td text-xs text-gray-500 whitespace-nowrap">
+                          {new Date(r.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="jobs-td text-xs text-gray-400">
+                          {r.costUsd > 0 ? `$${r.costUsd.toFixed(4)}` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {(() => {
+                const totalCost = (rerenderHistory.originalJob.costUsd ?? 0) +
+                  rerenderHistory.rerenders.reduce((s, r) => s + (r.costUsd ?? 0), 0)
+                return totalCost > 0 ? (
+                  <p className="text-xs text-gray-600 mt-3">
+                    Total cost across all renders: ${totalCost.toFixed(4)}
+                  </p>
+                ) : null
+              })()}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Re-render modal */}
+      {showReRender && job && (
+        <ReRenderModal
+          jobNumber={String(job.jobNumber)}
+          jobTitle={String(job.title ?? jobNumber)}
+          originalFrames={String(job.frames ?? '')}
+          onClose={() => { setShowReRender(false); load(true) }}
         />
       )}
 

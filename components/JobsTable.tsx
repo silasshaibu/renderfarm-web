@@ -317,6 +317,23 @@ function ContextMenu({ x, y, job, onClose, onAction, onInstanceType, onPriority 
         Unhold
       </button>
 
+      {/* Re-render — for completed jobs */}
+      {isTerminal && (
+        <>
+          <div className="ctx-menu-divider" />
+          <button type="button" className="ctx-menu-item"
+            title="Re-render with a new frame range. Files already on the farm — no upload needed."
+            onClick={() => { onAction(job, 'rerender'); onClose() }}>
+            Re-render…
+          </button>
+          <button type="button" className="ctx-menu-item"
+            title="Re-render exact same frames without opening a modal."
+            onClick={() => { onAction(job, 'rerender-same'); onClose() }}>
+            Re-render (same frames)
+          </button>
+        </>
+      )}
+
       <div className="ctx-menu-divider" />
 
       {/* Edit → with submenu — no nested menuitem roles to satisfy ARIA parent rule */}
@@ -532,7 +549,7 @@ function CellContent({ col, job }: { col: Column; job: Job }) {
 // ---------------------------------------------------------------------------
 export interface JobsTableProps {
   jobs: Job[]
-  onActionDone?: () => void   // called after any context-menu PATCH so the parent can refetch
+  onActionDone?: (job?: Job, action?: string) => void
 }
 
 export default function JobsTable({ jobs, onActionDone }: JobsTableProps) {
@@ -604,7 +621,13 @@ export default function JobsTable({ jobs, onActionDone }: JobsTableProps) {
     }
   }, [onActionDone])
 
-  const handleContextAction  = useCallback((job: Job, next: string) => patch(job, { status: next }), [patch])
+  const handleContextAction  = useCallback((job: Job, next: string) => {
+    if (next === 'rerender' || next === 'rerender-same') {
+      onActionDone?.(job, next)
+      return
+    }
+    patch(job, { status: next })
+  }, [patch, onActionDone])
   const handleInstanceTypeSave = useCallback(
     (job: Job, instanceId: string, gpuType: string | null, gpus: number) =>
       patch(job, {

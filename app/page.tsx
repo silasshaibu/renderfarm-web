@@ -1,11 +1,12 @@
 'use client'
 
-import { useMemo, useEffect, useCallback, useRef } from 'react'
+import { useMemo, useEffect, useCallback, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import JobsTable from '@/components/JobsTable'
+import ReRenderModal from '@/components/ReRenderModal'
 import { jobs as jobsApi, type ApiJob } from '@/lib/api'
 import { useApiFetch } from '@/hooks/useApiFetch'
-import { isLoggedIn } from '@/lib/auth'
+import { isLoggedIn, getToken } from '@/lib/auth'
 import type { Job, JobStatus } from '@/types/job'
 
 function fmtAvgFrame(sec: number | null | undefined): string {
@@ -66,9 +67,12 @@ export default function JobsPage() {
   const router = useRouter()
   const { data, loading, syncing, error, refetch } = useApiFetch(() => jobsApi.list())
 
-  // ── Poll every 5 s (same as job-detail page) ────────────────────────────────
+  const [rerenderJob, setRerenderJob] = useState<{ jobNumber: string; title: string; frames: string } | null>(null)
+  const [sameFrameJob, setSameFrameJob] = useState<{ jobNumber: string; frames: string; title: string } | null>(null)
+  const [sameFrameLoading, setSameFrameLoading] = useState(false)
+
   const refetchRef = useRef(refetch)
-  refetchRef.current = refetch          // always up-to-date without re-running effect
+  refetchRef.current = refetch
 
   useEffect(() => {
     const timer = setInterval(() => { refetchRef.current() }, 5000)
@@ -78,8 +82,23 @@ export default function JobsPage() {
   const mappedJobs   = useMemo(() => (data ?? []).map(mapJob), [data])
   const runningCount = mappedJobs.filter(j => j.status === 'running').length
 
-  // Called by JobsTable after any context-menu action so the list refreshes immediately
-  const handleActionDone = useCallback(() => { refetch() }, [refetch])
+  const handleActionDone = useCallback((job?: Job, action?: string) => {
+    if (action === 'rerender' && job) {
+      const apiJob = (data ?? []).find(j => j.jobNumber === job.id)
+      if (apiJob) {
+        setRerenderJob({ jobNumber: String(apiJob.jobNumber), title: String(apiJob.title), frames: String(apiJob.frames) })
+      }
+      return
+    }
+    if (action === 'rerender-same' && job) {
+      const apiJob = (data ?? []).find(j => j.jobNumber === job.id)
+      if (apiJob) {
+        setSameFrameJob({ jobNumber: String(apiJob.jobNumber), title: String(apiJob.title), frames: String(apiJob.frames) })
+      }
+      return
+    }
+    refetch()
+  }, [refetch, data])
 
   useEffect(() => {
     if (!isLoggedIn() && !loading) router.push('/login')
@@ -121,11 +140,63 @@ export default function JobsPage() {
         <JobsTable jobs={mappedJobs} onActionDone={handleActionDone} />
       )}
 
-      {/* Small syncing indicator — shown during background polls, never blinks the table */}
       {syncing && (
         <div className="jobs-sync-pill">
           <span className="jobs-sync-dot" />
           Processing
+        </div>
+      )}
+
+      {/* Re-render modal (full) */}
+      {rerenderJob && (
+        <ReRenderModal
+          jobNumber={rerenderJob.jobNumber}
+          jobTitle={rerenderJob.title}
+          originalFrames={rerenderJob.frames}
+          onClose={() => { setRerenderJob(null); refetch() }}
+        />
+      )}
+
+      {/* Re-render same frames — quick confirm */}
+      {sameFrameJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={e => { if (e.target === e.currentTarget) setSameFrameJob(null) }}>
+          <div className="bg-[#14161c] border border-white/10 rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <h2 className="text-base font-semibold text-white mb-2">Re-render same frames?</h2>
+            <p className="text-sm text-gray-400 mb-5">
+              Re-submit <span className="text-gray-200 font-mono">{sameFrameJob.jobNumber}</span> with the same
+              settings and frame range <span className="font-mono text-gray-200">{sameFrameJob.frames}</span>.
+              No upload needed — files are already on the farm.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setSameFrameJob(null)}
+                className="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-gray-200 transition-colors">
+                Cancel
+              </button>
+              <button type="button" disabled={sameFrameLoading}
+                onClick={async () => {
+                  setSameFrameLoading(true)
+                  try {
+                    const token = getToken() ?? ''
+                    const res = await fetch(`/api/jobs/${sameFrameJob.jobNumber}/rerender`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                      body: JSON.stringify({ frame_range: sameFrameJob.frames }),
+                    })
+                    const data = await res.json() as { jobNumber?: string; message?: string }
+                    if (res.ok) {
+                      setSameFrameJob(null)
+                      router.push(`/jobs/${data.jobNumber}`)
+                    }
+                  } finally {
+                    setSameFrameLoading(false)
+                  }
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50">
+                {sameFrameLoading ? 'Submitting…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
