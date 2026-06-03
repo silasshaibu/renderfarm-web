@@ -1,24 +1,33 @@
 {
-  "name": "pc-migration-tool",
+  "name": "renderfarm-web",
   "version": "1.0.0",
-  "description": "Transfer installed software and settings between Windows PCs",
-  "author": "Your Name",
+  "description": "Render farm dashboard and job management",
   "license": "MIT",
-  "main": "main/main.js",
-  "homepage": "./",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
   "dependencies": {
-    "archiver": "^5.3.1",
-    "axios": "^1.6.0",
-    "decompress": "^4.2.1",
-    "dotenv": "^16.3.1",
-    "electron-log": "^5.0.1",
-    "electron-store": "^8.1.0",
-    "fs-extra": "^11.2.0",
-    "lodash": "^4.17.21",
-    "node-7z": "^3.0.0",
-    "progress": "^2.0.3",
-    "regedit": "^3.0.3",
-    "socket.io": "^4.6.1",
-    "uuid": "^9.0.0"
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "postgres": "^3.4.4",
+    "recharts": "^2.12.0",
+    "jose": "^5.4.1",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.10.6",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@typescript-eslint/eslint-plugin": "^6.17.0",
+    "@typescript-eslint/parser": "^6.17.0",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "^15.1.0",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.4.1"
   }
 }
