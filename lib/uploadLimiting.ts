@@ -1,5 +1,6 @@
 import { sql, initDB } from '@/lib/db'
 import { blockIP } from './middleware/ipBlocklist'
+import { recordAbuseSignal, SCORE_DELTAS } from './abuseScoring'
 
 const LIMITS = {
   MAX_FILE_SIZE: 10 * 1024 ** 3,           // 10GB
@@ -20,8 +21,22 @@ export interface UploadLimitCheck {
 }
 
 /** Check single file size limit */
-export function checkFileSizeLimit(fileSize: number): UploadLimitCheck {
+export async function checkFileSizeLimit(
+  fileSize: number,
+  userId?: number,
+  ip?: string
+): Promise<UploadLimitCheck> {
   if (fileSize > LIMITS.MAX_FILE_SIZE) {
+    if (userId && ip) {
+      void recordAbuseSignal({
+        user_id: userId,
+        ip_address: ip,
+        signal_type: 'file_too_large',
+        severity: 'low',
+        delta: SCORE_DELTAS.FILE_TOO_LARGE,
+        details: { attempted: fileSize, limit: LIMITS.MAX_FILE_SIZE },
+      })
+    }
     return {
       allowed: false,
       reason: 'file_too_large',
@@ -35,7 +50,8 @@ export function checkFileSizeLimit(fileSize: number): UploadLimitCheck {
 /** Check daily upload quota based on account age */
 export async function checkDailyUploadLimit(
   userId: number,
-  fileSize: number
+  fileSize: number,
+  ip?: string
 ): Promise<UploadLimitCheck> {
   try {
     await initDB()
@@ -63,6 +79,16 @@ export async function checkDailyUploadLimit(
     const todayUploaded = Number(todayRows[0]?.total ?? 0)
 
     if (todayUploaded + fileSize > dailyLimit) {
+      if (ip) {
+        void recordAbuseSignal({
+          user_id: userId,
+          ip_address: ip,
+          signal_type: 'daily_limit_exceeded',
+          severity: 'medium',
+          delta: SCORE_DELTAS.DAILY_LIMIT_EXCEEDED,
+          details: { todayUploaded, attempted: fileSize, limit: dailyLimit },
+        })
+      }
       return {
         allowed: false,
         reason: 'daily_upload_limit_exceeded',
