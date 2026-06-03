@@ -99,22 +99,10 @@ export async function POST(req: NextRequest) {
 
   // ── Credit balance check ─────────────────────────────────────────────────
   // credit_limit > 0 means admin has granted this user an overdraft allowance.
-  // They can render as long as balance > -credit_limit.
-  const balance     = await getBalance(user.sub).catch(() => 999) // fail open if credits table missing
+  // Instead of blocking with 402, let the upload proceed but hold the job.
+  const balance     = await getBalance(user.sub).catch(() => 999) // fail open
   const creditLimit = Number(userRow[0]?.credit_limit ?? 0)
-  if (balance <= -creditLimit) {
-    return NextResponse.json(
-      {
-        error:        'Insufficient credits',
-        message:      creditLimit > 0
-          ? `You have reached your outstanding balance limit of $${creditLimit.toFixed(2)}. Please purchase credits to continue rendering.`
-          : 'You have no credits remaining. Please purchase credits to continue rendering.',
-        balance,
-        purchase_url: '/billing',
-      },
-      { status: 402 }
-    )
-  }
+  const creditHold  = balance <= -creditLimit   // flag — job will be held, not rejected
 
   const data = await req.json() as {
     title?:              string
@@ -165,9 +153,11 @@ export async function POST(req: NextRequest) {
     'sync_failed', 'syncing', 'pending', 'holding',
     'running', 'success', 'downloaded', 'failed', 'preempted',
   ]
-  const status = (data.status && VALID_STATUSES.includes(data.status))
+  const baseStatus = (data.status && VALID_STATUSES.includes(data.status))
     ? data.status
     : 'queued'
+  // If user has no credits, hold the job instead of letting it dispatch
+  const status = creditHold ? 'holding' : baseStatus
 
   // Generate next RF-XXXX number
   const countRows = await sql`SELECT COUNT(*) AS cnt FROM jobs`
@@ -178,7 +168,11 @@ export async function POST(req: NextRequest) {
   const assetsTotal        = data.assets_total    ?? 0
   const assetsUploaded     = data.assets_uploaded  ?? 0
   const outputPath         = data.output_folder    ?? ''
-  const statusDescription  = data.status_description ?? ''
+  const statusDescription  = creditHold
+    ? (creditLimit > 0
+        ? `Outstanding balance limit reached ($${creditLimit.toFixed(2)}). Add credits to start rendering — visit your dashboard.`
+        : `No credits remaining. Add credits to your account to start rendering — visit your dashboard.`)
+    : (data.status_description ?? '')
   const provider           = data.provider         ?? 'renderfarm'
   const gcsScenePath       = data.gcs_scene_path   ?? ''
 
@@ -252,6 +246,75 @@ export async function POST(req: NextRequest) {
   `
 
   const job = rowToJob(rows[0] as Record<string, unknown>)
+
+  // ── Credit hold: notify user + admin, skip VM dispatch ────────────────────
+  if (creditHold) {
+    // Email the user
+    const userEmailRow = await sql`SELECT email, name FROM users WHERE id = ${user.sub} LIMIT 1` as Record<string, unknown>[]
+    const userEmail = userEmailRow[0]?.email as string | undefined
+    if (userEmail) {
+      const dashboardUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'https://renderfarm-web.vercel.app') + '/billing'
+      sendEmail({
+        to: userEmail,
+        subject: `⚠ Your render job is on hold — ${String(job.jobNumber)}`,
+        html: `
+          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;">
+            <h2 style="color:#111;margin-top:0;">Render Job On Hold</h2>
+            <p style="color:#444;line-height:1.6;">
+              Your job <strong>${String(job.jobNumber)} — ${String(data.title ?? 'Untitled')}</strong> has been
+              uploaded successfully but cannot start because your credit balance is
+              ${creditLimit > 0
+                ? `at its limit of <strong>$${creditLimit.toFixed(2)}</strong>`
+                : 'at <strong>$0.00</strong>'}.
+            </p>
+            <p style="color:#444;line-height:1.6;">
+              Add credits to your account and the job will be released automatically.
+            </p>
+            <p><a href="${dashboardUrl}"
+              style="display:inline-block;padding:12px 24px;background:#0d9488;color:#fff;border-radius:5px;text-decoration:none;font-weight:600;">
+              Add Credits →
+            </a></p>
+            <p style="color:#999;font-size:13px;">
+              You can also ask your admin to increase your balance limit or grant credits directly.
+            </p>
+          </div>`,
+      }).catch(() => null)
+    }
+
+    // Notify admin
+    const adminRow = await sql`SELECT email FROM users WHERE is_admin = TRUE AND is_active = TRUE LIMIT 1` as Record<string, unknown>[]
+    const adminEmail = adminRow[0]?.email as string | undefined
+    if (adminEmail && adminEmail !== userEmail) {
+      const adminUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'https://renderfarm-web.vercel.app') + '/admin'
+      sendEmail({
+        to: adminEmail,
+        subject: `[Admin] Job held — no credits: ${String(job.jobNumber)} (${userEmail ?? 'unknown'})`,
+        html: `
+          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;">
+            <h2 style="color:#111;margin-top:0;">Job On Hold — Insufficient Credits</h2>
+            <table style="width:100%;border-collapse:collapse;font-size:14px;">
+              <tr><td style="padding:6px 4px;color:#888;width:120px;">User</td><td style="padding:6px 4px;">${userEmail ?? String(user.sub)}</td></tr>
+              <tr><td style="padding:6px 4px;color:#888;">Job</td><td style="padding:6px 4px;font-family:monospace;">${String(job.jobNumber)}</td></tr>
+              <tr><td style="padding:6px 4px;color:#888;">Balance</td><td style="padding:6px 4px;">$${balance.toFixed(2)}</td></tr>
+              <tr><td style="padding:6px 4px;color:#888;">Limit</td><td style="padding:6px 4px;">$${creditLimit.toFixed(2)}</td></tr>
+            </table>
+            <p><a href="${adminUrl}"
+              style="display:inline-block;margin-top:16px;padding:12px 24px;background:#6366f1;color:#fff;border-radius:5px;text-decoration:none;font-weight:600;">
+              Go to Admin →
+            </a></p>
+          </div>`,
+      }).catch(() => null)
+    }
+
+    return NextResponse.json({
+      jobNumber:   job.jobNumber,
+      id:          job.id,
+      held:        true,
+      holdReason:  'insufficient_credits',
+      message:     statusDescription,
+      balance,
+    }, { status: 201 })
+  }
 
   // ── Auto-dispatch GCP VMs using chunk + scout architecture ─────────────────
   if (gcsScenePath) {
