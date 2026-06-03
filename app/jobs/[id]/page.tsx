@@ -1033,7 +1033,7 @@ export default function JobDetailPage({ params }: PageProps) {
       {showReRender && job && (
         <ReRenderModal
           jobNumber={String(job.jobNumber)}
-          jobTitle={String(job.title ?? jobNumber)}
+          jobTitle={String(job.title ?? id)}
           originalFrames={String(job.frames ?? '')}
           onClose={() => { setShowReRender(false); load(true) }}
         />
