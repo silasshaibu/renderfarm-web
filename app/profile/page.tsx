@@ -513,7 +513,7 @@ function StorageSettingsSection() {
                 aria-label="Storage cost alert threshold"
                 className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 text-sm text-white"
               />
-              <p className="text-xs text-gray-500 mt-1">You'll get an email alert if monthly cost exceeds this amount</p>
+              <p className="text-xs text-gray-500 mt-1">You&apos;ll get an email alert if monthly cost exceeds this amount</p>
             </div>
 
             <div className="pt-2 border-t border-white/5">
@@ -905,7 +905,7 @@ export default function ProfilePage() {
                 className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors">
                 {resetting ? 'Sending…' : 'Reset Password'}
               </button>
-              <span className="text-xs text-gray-600 ml-1">— we'll email you a reset link</span>
+              <span className="text-xs text-gray-600 ml-1">— we&apos;ll email you a reset link</span>
             </div>
           </div>
         </Card>

@@ -359,7 +359,7 @@ export default function JobDetailPage({ params }: PageProps) {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [id, loadTimings])
+  }, [id, loadTimings, loadRerenderHistory])
 
   useEffect(() => {
     let cancelled = false
