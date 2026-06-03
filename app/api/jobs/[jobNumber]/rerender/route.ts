@@ -3,6 +3,8 @@ import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
 import { ensureReRenderSchema, parseFrameSpec, chunkFrames, isValidFrameSpec } from '@/lib/frames'
 import { spawnChunkVMs } from '@/lib/gcp/compute'
+import { INTERNAL_SECRET } from '@/lib/gcp/clients'
+import type { TaskChunk } from '@/lib/utils/frames'
 
 type Params = { params: Promise<{ jobNumber: string }> }
 
@@ -200,23 +202,29 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (provider === 'gcp' && gcsPath) {
     try {
       const appUrl      = process.env.NEXT_PUBLIC_APP_URL ?? 'https://renderfarm-web.vercel.app'
-      const machineType = String(origManifest.machine_type ?? 'n1-standard-4')
-      const preemptible = Boolean(origManifest.preemptible ?? true)
+      const machineType = String(newRS.machine_type ?? origManifest.machine_type ?? 'n1-standard-4')
+      const preemptible = newRS.preemptible !== undefined ? Boolean(newRS.preemptible) : Boolean(origManifest.preemptible ?? true)
       const software    = String(orig.software ?? 'blender-4-1')
 
-      await spawnChunkVMs({
-        jobId:       String(newJobId),
-        jobNumber:   newJobNum,
+      // Convert [start, end] tuples → TaskChunk objects
+      const taskChunks: TaskChunk[] = chunks.map(([sf, ef], i) => ({
+        index:      i,
+        frames:     Array.from({ length: ef - sf + 1 }, (_, k) => sf + k),
+        startFrame: sf,
+        endFrame:   ef,
+        isScout:    hasScouts && parseFrameSpec(scoutFrames).some(f => f >= sf && f <= ef),
+      }))
+
+      await spawnChunkVMs(
+        String(newJobId),
+        taskChunks,
         gcsPath,
-        chunks,
         machineType,
         preemptible,
-        software,
         appUrl,
-        scoutIndices: hasScouts
-          ? chunks.map((c, i) => c.some(f => scoutSet.has(f)) ? i : -1).filter(i => i >= 0)
-          : [],
-      })
+        INTERNAL_SECRET,
+        software,
+      )
     } catch (e) {
       console.error('[rerender] VM dispatch error:', e)
       // Job is created — VMs can be dispatched later via retry
