@@ -6,6 +6,15 @@ import { spawnChunkVMs } from '@/lib/gcp/compute'
 import { INTERNAL_SECRET } from '@/lib/gcp/clients'
 import { parseFrameRange, chunkFrames, resolveScoutFrames } from '@/lib/utils/frames'
 import { ensureCreditSchema, getBalance } from '@/lib/credits'
+import { checkIPBlocklist, getClientIP } from '@/lib/middleware/ipBlocklist'
+import {
+  checkFileSizeLimit,
+  checkDailyUploadLimit,
+  checkTotalStorageLimit,
+  checkConcurrentUploads,
+  detectRapidUpload,
+  detectDuplicateContent,
+} from '@/lib/uploadLimiting'
 
 
 
@@ -82,11 +91,25 @@ export async function GET(req: NextRequest) {
 
 // POST /api/jobs — create a new job (called by the Blender addon after upload)
 export async function POST(req: NextRequest) {
+  // Check IP blocklist first
+  const ipBlock = await checkIPBlocklist(req)
+  if (ipBlock) return ipBlock
+
   const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   await initDB()
   await ensureCreditSchema().catch(() => null)
+
+  // Check upload rate limits
+  const clientIP = getClientIP(req)
+  const userRow0 = await sql`SELECT uploads_blocked FROM users WHERE id = ${user.sub} LIMIT 1` as Record<string, unknown>[]
+  if (userRow0[0]?.uploads_blocked) {
+    return NextResponse.json(
+      { message: 'Uploads are blocked on this account due to abuse detection. Contact support.' },
+      { status: 429 }
+    )
+  }
 
   // ── Suspension + credit checks ────────────────────────────────────────────
   const userRow = await sql`
@@ -102,8 +125,8 @@ export async function POST(req: NextRequest) {
 
   const balance         = await getBalance(user.sub).catch(() => 999)
   const creditLimit     = Number(userRow[0]?.credit_limit ?? 0)
-  const overdraftLimit  = Number(userRow[0]?.overdraft_limit ?? -20)
-  const inDebtHold      = Boolean(userRow[0]?.debt_hold_since)  // exceeded -$20
+  const overdraftLimit  = Number(userRow[0]?.overdraft_limit ?? -5)  // -$5 limit
+  const inDebtHold      = Boolean(userRow[0]?.debt_hold_since)  // exceeded overdraft limit
 
   // Hold if: manual credit_limit exceeded OR overdraft limit exceeded
   const creditHold = inDebtHold || balance <= -creditLimit
