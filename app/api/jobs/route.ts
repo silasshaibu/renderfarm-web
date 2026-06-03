@@ -35,6 +35,9 @@ function rowToJob(row: Record<string, unknown>) {
     avgFrameSec:        row.avg_frame_sec != null ? Number(row.avg_frame_sec) : null,
     projectId:          row.project_id != null ? Number(row.project_id) : null,
     taskCount:          row.task_count  != null ? Number(row.task_count)  : null,
+    renderSettings:     (row.render_settings as Record<string, unknown>) ?? null,
+    parentJobId:        row.parent_job_id != null ? Number(row.parent_job_id) : null,
+    rerenderNumber:     row.rerender_number != null ? Number(row.rerender_number) : 0,
   }
 }
 
@@ -179,6 +182,32 @@ export async function POST(req: NextRequest) {
   const provider           = data.provider         ?? 'renderfarm'
   const gcsScenePath       = data.gcs_scene_path   ?? ''
 
+  // Ensure render_settings column exists
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS render_settings JSONB DEFAULT '{}'::jsonb`.catch(() => null)
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS parent_job_id INTEGER DEFAULT NULL`.catch(() => null)
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS rerender_number INTEGER DEFAULT 0`.catch(() => null)
+
+  // render_settings from Blender addon — store full render config for re-render modal
+  const renderSettingsRaw = (data as Record<string, unknown>).render_settings as Record<string, unknown> | undefined
+  const renderSettings = renderSettingsRaw ? JSON.stringify({
+    samples:             renderSettingsRaw.samples,
+    resolution_x:        renderSettingsRaw.resolution_x,
+    resolution_y:        renderSettingsRaw.resolution_y,
+    resolution_pct:      renderSettingsRaw.resolution_pct,
+    output_path:         renderSettingsRaw.output_path ?? data.output_folder,
+    engine:              renderSettingsRaw.engine,
+    cameras:             renderSettingsRaw.cameras,
+    active_camera:       renderSettingsRaw.active_camera,
+    chunk_size:          renderSettingsRaw.chunk_size ?? data.chunk_size,
+    instance_type:       renderSettingsRaw.instance_type,
+    machine_type:        renderSettingsRaw.machine_type,
+    preemptible:         renderSettingsRaw.preemptible,
+    preemptible_retries: renderSettingsRaw.preemptible_retries,
+    scout_frames:        renderSettingsRaw.scout_frames ?? data.scout_frames,
+    frame_range:         data.frames,
+    blender_version:     renderSettingsRaw.blender_version ?? data.software,
+  }) : null
+
   // Notification prefs from Blender addon payload
   const notifData      = (data as Record<string, unknown>).notifications as Record<string, unknown> | undefined
   const notifEmail     = Boolean(notifData?.email     ?? true)
@@ -196,7 +225,8 @@ export async function POST(req: NextRequest) {
       job_number, title, frames, software, blender_file, status,
       manifest, assets_total, assets_uploaded,
       output_path, status_description, provider, gcs_scene_path,
-      project_id, notification_email, notification_sound, notification_on
+      project_id, notification_email, notification_sound, notification_on,
+      render_settings
     )
     VALUES (
       ${jobNumber},
@@ -215,7 +245,8 @@ export async function POST(req: NextRequest) {
       ${projectIdNum},
       ${notifEmail},
       ${notifSound},
-      ${notifOn}
+      ${notifOn},
+      ${renderSettings}::jsonb
     )
     RETURNING *
   `

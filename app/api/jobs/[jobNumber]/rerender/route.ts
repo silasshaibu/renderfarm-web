@@ -32,11 +32,21 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const body = await req.json() as {
-    frame_range:   string
-    chunk_size?:   number
-    scout_frames?: string
-    job_title?:    string
-    override_settings?: { enabled?: boolean; resolution_x?: number; resolution_y?: number; samples?: number }
+    frame_range:          string
+    chunk_size?:          number
+    scout_frames?:        string
+    job_title?:           string
+    samples?:             number
+    resolution_x?:        number
+    resolution_y?:        number
+    resolution_pct?:      number
+    output_path?:         string
+    engine?:              string
+    camera?:              string
+    instance_type?:       string
+    machine_type?:        string
+    preemptible?:         boolean
+    preemptible_retries?: number
     notifications?: { email?: boolean; sound?: boolean; notify_on?: string }
   }
 
@@ -81,14 +91,35 @@ export async function POST(req: NextRequest, { params }: Params) {
   ` as Record<string, unknown>[]
   const reRenderNum = Number((reRenderCountRows[0] as Record<string, unknown>)?.cnt ?? 0) + 1
 
-  const chunkSize   = Number(body.chunk_size ?? orig.chunk_size ?? 1)
+  const origRS      = (orig.render_settings as Record<string, unknown>) ?? {}
+  const chunkSize   = Number(body.chunk_size   ?? origRS.chunk_size   ?? orig.chunk_size ?? 1)
   const newTitle    = body.job_title ?? `${String(orig.title)} [Re-render ${reRenderNum}]`
   const frameRange  = body.frame_range.trim()
-  const scoutFrames = body.scout_frames ?? ''
+  const scoutFrames = body.scout_frames ?? String(origRS.scout_frames ?? '')
+  const outputPath  = body.output_path  ?? String(origRS.output_path  ?? orig.output_path ?? '')
 
   const notifEmail  = body.notifications?.email ?? Boolean(orig.notification_email)
   const notifSound  = body.notifications?.sound ?? Boolean(orig.notification_sound)
   const notifOn     = body.notifications?.notify_on ?? String(orig.notification_on ?? 'BOTH')
+
+  // Build merged render_settings for the new job
+  const newRS: Record<string, unknown> = {
+    ...origRS,
+    frame_range:         frameRange,
+    chunk_size:          chunkSize,
+    scout_frames:        scoutFrames,
+  }
+  if (body.samples !== undefined)            newRS.samples = body.samples
+  if (body.resolution_x !== undefined)       newRS.resolution_x = body.resolution_x
+  if (body.resolution_y !== undefined)       newRS.resolution_y = body.resolution_y
+  if (body.resolution_pct !== undefined)     newRS.resolution_pct = body.resolution_pct
+  if (body.output_path !== undefined)        newRS.output_path = body.output_path
+  if (body.engine !== undefined)             newRS.engine = body.engine
+  if (body.camera !== undefined)             newRS.active_camera = body.camera
+  if (body.instance_type !== undefined)      newRS.instance_type = body.instance_type
+  if (body.machine_type !== undefined)       newRS.machine_type = body.machine_type
+  if (body.preemptible !== undefined)        newRS.preemptible = body.preemptible
+  if (body.preemptible_retries !== undefined) newRS.preemptible_retries = body.preemptible_retries
 
   // Count jobs to determine next number
   const countRows = await sql`SELECT COUNT(*) AS cnt FROM jobs`
@@ -96,7 +127,9 @@ export async function POST(req: NextRequest, { params }: Params) {
   const newJobNum = `RF-${String(nextNum).padStart(4, '0')}`
 
   // Inherit settings from original job (with optional overrides)
-  const ov = body.override_settings?.enabled ? body.override_settings : {}
+
+  // Ensure render_settings column exists
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS render_settings JSONB DEFAULT '{}'::jsonb`.catch(() => null)
 
   const newJobRows = await sql`
     INSERT INTO jobs (
@@ -105,7 +138,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       project_id, user_id,
       parent_job_id, reused_files_count, rerender_number,
       notification_email, notification_sound, notification_on,
-      resolution_x, resolution_y, samples
+      render_settings
     ) VALUES (
       ${newJobNum},
       ${newTitle},
@@ -114,7 +147,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       ${orig.blender_file ?? ''},
       'pending',
       ${JSON.stringify({ ...origManifest, rerender: true, parent: jobNumber })}::jsonb,
-      ${orig.output_path ?? ''},
+      ${outputPath},
       ${provider},
       ${gcsPath},
       ${orig.project_id != null ? Number(orig.project_id) : null},
@@ -125,9 +158,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       ${notifEmail},
       ${notifSound},
       ${notifOn},
-      ${(ov as Record<string, unknown>).resolution_x ?? orig.resolution_x ?? null},
-      ${(ov as Record<string, unknown>).resolution_y ?? orig.resolution_y ?? null},
-      ${(ov as Record<string, unknown>).samples ?? orig.samples ?? null}
+      ${JSON.stringify(newRS)}::jsonb
     )
     RETURNING *
   ` as Record<string, unknown>[]
