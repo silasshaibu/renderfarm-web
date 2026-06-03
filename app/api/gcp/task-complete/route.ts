@@ -3,7 +3,7 @@ import { sql, initDB } from '@/lib/db'
 import { INTERNAL_SECRET } from '@/lib/gcp/clients'
 import { getSignedDownloadUrls } from '@/lib/gcp/storage'
 import { syncJobStatus } from '@/lib/jobs/sync'
-import { ensureCreditSchema, addCredit, getBalance, maybeSendLowBalanceEmail } from '@/lib/credits'
+import { ensureCreditSchema, addCredit, getBalance, maybeSendLowBalanceEmail, checkOverdraftStatus } from '@/lib/credits'
 import { sendJobNotification, ensureNotificationSchema } from '@/lib/notifications'
 
 // POST { jobId, frame, status }
@@ -111,6 +111,8 @@ export async function POST(req: NextRequest) {
           const userEmailRow = await sql`SELECT email FROM users WHERE id = ${jobUserId} LIMIT 1` as Record<string, unknown>[]
           const userEmail = userEmailRow[0]?.email as string | undefined
           if (userEmail) await maybeSendLowBalanceEmail(jobUserId, userEmail, newBalance)
+          // Overdraft check — may kill jobs if limit exceeded
+          void checkOverdraftStatus(jobUserId, newBalance)
         }
       }
     } catch (e) {

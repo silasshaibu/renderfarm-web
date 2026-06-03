@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const pageSize = Math.min(100, Math.max(1, Number(req.nextUrl.searchParams.get('pageSize') ?? '25')))
   const offset   = (page - 1) * pageSize
 
-  const [balance, rows, countRows] = await Promise.all([
+  const [balance, rows, countRows, userRows] = await Promise.all([
     getBalance(user.sub),
     sql`
       SELECT id, amount, type, description, job_id, created_at, created_by
@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
       LIMIT ${pageSize} OFFSET ${offset}
     ` as Promise<Record<string, unknown>[]>,
     sql`SELECT COUNT(*) AS cnt FROM credits WHERE user_id = ${user.sub}` as Promise<Record<string, unknown>[]>,
+    sql`SELECT overdraft_limit, debt_hold_since, credit_limit FROM users WHERE id = ${user.sub} LIMIT 1` as Promise<Record<string, unknown>[]>,
   ])
 
   const total = Number(countRows[0]?.cnt ?? 0)
@@ -46,6 +47,12 @@ export async function GET(req: NextRequest) {
     }
   })
 
+  const uRow          = userRows[0] ?? {}
+  const overdraftLimit = Number(uRow.overdraft_limit ?? -20)
+  const inDebtHold     = Boolean(uRow.debt_hold_since)
+  const overdraftZone  = balance < 0 && balance > overdraftLimit  // -$0.01 to -$20
+  const overdraftExceeded = balance <= overdraftLimit              // below -$20
+
   return NextResponse.json({
     balance,
     items,
@@ -53,5 +60,11 @@ export async function GET(req: NextRequest) {
     page,
     pageSize,
     pages: Math.ceil(total / pageSize),
+    overdraft: {
+      limit:     overdraftLimit,
+      inHold:    inDebtHold,
+      zone:      overdraftZone,
+      exceeded:  overdraftExceeded,
+    },
   })
 }

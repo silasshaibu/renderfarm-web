@@ -63,6 +63,71 @@ function mapJob(j: ApiJob): Job {
   }
 }
 
+function OverdraftBanner() {
+  const [overdraft, setOverdraft] = useState<{
+    balance: number; limit: number; inHold: boolean; zone: boolean; exceeded: boolean
+  } | null>(null)
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+    if (!token) return
+    fetch('/api/profile/credits?pageSize=1', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { balance?: number; overdraft?: { limit: number; inHold: boolean; zone: boolean; exceeded: boolean } } | null) => {
+        if (d?.overdraft && (d.overdraft.zone || d.overdraft.exceeded)) {
+          setOverdraft({ balance: d.balance ?? 0, ...d.overdraft })
+        }
+      })
+      .catch(() => null)
+  }, [])
+
+  if (!overdraft) return null
+
+  if (overdraft.exceeded || overdraft.inHold) {
+    return (
+      <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-red-950/50 border border-red-700/50 text-sm">
+        <span className="text-red-400 text-base shrink-0 mt-0.5">⛔</span>
+        <div className="flex-1">
+          <p className="text-red-300 font-medium">
+            Overdraft limit reached — rendering paused
+          </p>
+          <p className="text-red-400/80 text-xs mt-0.5">
+            Your balance is <strong className="text-red-300">${overdraft.balance.toFixed(2)}</strong>,
+            which is below the -${Math.abs(overdraft.limit).toFixed(2)} limit.
+            Running jobs have been stopped. Add credits to resume.
+          </p>
+        </div>
+        <a href="/billing"
+          className="shrink-0 px-3 py-1.5 rounded text-xs font-medium bg-red-600 hover:bg-red-500 text-white transition-colors whitespace-nowrap">
+          Add Credits →
+        </a>
+      </div>
+    )
+  }
+
+  if (overdraft.zone) {
+    return (
+      <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-950/40 border border-amber-700/40 text-sm">
+        <span className="text-amber-400 shrink-0 mt-0.5">⚠</span>
+        <div className="flex-1">
+          <p className="text-amber-300 font-medium">Low balance — overdraft zone</p>
+          <p className="text-amber-400/80 text-xs mt-0.5">
+            Balance: <strong className="text-amber-300">${overdraft.balance.toFixed(2)}</strong>.
+            Rendering will pause at -${Math.abs(overdraft.limit).toFixed(2)}.
+            Add credits to avoid interruption.
+          </p>
+        </div>
+        <a href="/billing"
+          className="shrink-0 px-3 py-1.5 rounded text-xs font-medium border border-amber-600/50 text-amber-400 hover:border-amber-500 transition-colors whitespace-nowrap">
+          Add Credits
+        </a>
+      </div>
+    )
+  }
+
+  return null
+}
+
 export default function JobsPage() {
   const router = useRouter()
   const { data, loading, syncing, error, refetch } = useApiFetch(() => jobsApi.list())
@@ -125,6 +190,8 @@ export default function JobsPage() {
           )}
         </div>
       </div>
+
+      <OverdraftBanner />
 
       {error && (
         <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded px-4 py-3">

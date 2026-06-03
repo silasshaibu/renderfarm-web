@@ -66,7 +66,12 @@ export async function ensureCreditSchema() {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS normalized_email    TEXT    DEFAULT ''`
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS low_balance_notified_at TIMESTAMPTZ DEFAULT NULL`
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_bonus_claimed BOOLEAN DEFAULT FALSE`
-  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_limit NUMERIC(12,4) DEFAULT 0`
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_limit        NUMERIC(12,4) DEFAULT 0`
+  // Overdraft system
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS overdraft_limit     NUMERIC(12,4) DEFAULT -20.00`
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS overdraft_notified  BOOLEAN DEFAULT FALSE`
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS debt_hold_since     TIMESTAMPTZ DEFAULT NULL`
+  await sql`ALTER TABLE jobs  ADD COLUMN IF NOT EXISTS held_for_debt       BOOLEAN DEFAULT FALSE`.catch(() => null)
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +256,165 @@ export async function maybeSendLowBalanceEmail(userId: number, email: string, ba
       </div>
     `,
   }).catch(() => null)
+}
+
+// ---------------------------------------------------------------------------
+// Overdraft system
+// ---------------------------------------------------------------------------
+
+export const OVERDRAFT_LIMIT_DEFAULT = -20.00  // $-20 hard stop
+
+/** Check balance after a deduction and take action if overdraft is exceeded. */
+export async function checkOverdraftStatus(userId: number, balance: number): Promise<void> {
+  try {
+    const userRows = await sql`
+      SELECT email, name, overdraft_limit, overdraft_notified, debt_hold_since
+      FROM users WHERE id = ${userId} LIMIT 1
+    ` as Record<string, unknown>[]
+    if (!userRows.length) return
+
+    const user            = userRows[0]
+    const overdraftLimit  = Number(user.overdraft_limit ?? OVERDRAFT_LIMIT_DEFAULT)
+    const alreadyInHold   = Boolean(user.debt_hold_since)
+
+    // Zone 1: Healthy — clear any previous hold
+    if (balance >= 0 && alreadyInHold) {
+      await clearDebtHold(userId, String(user.email))
+      return
+    }
+
+    // Zone 2: Overdraft but within limit (-$0.01 → -$20) — jobs keep running
+    if (balance > overdraftLimit && balance < 0) {
+      await maybeSendLowBalanceEmail(userId, String(user.email), balance)
+      return
+    }
+
+    // Zone 3: Limit exceeded (< -$20) — kill jobs, hold new ones
+    if (balance <= overdraftLimit && !alreadyInHold) {
+      await handleOverdraftExceeded(userId, balance, overdraftLimit, String(user.email))
+    }
+  } catch (err) {
+    console.error('[credits] checkOverdraftStatus error:', err)
+  }
+}
+
+/** Kill running jobs, hold pending ones, notify user + admin. */
+export async function handleOverdraftExceeded(
+  userId: number, balance: number, overdraftLimit: number, email: string
+): Promise<void> {
+  // Mark user as in debt hold (prevents duplicate triggers)
+  await sql`
+    UPDATE users
+    SET debt_hold_since = NOW(), overdraft_notified = TRUE
+    WHERE id = ${userId}
+  `
+
+  // Kill all running jobs for this user
+  const killedJobs = await sql`
+    UPDATE jobs SET status = 'failed',
+      status_description = 'Overdraft limit exceeded — balance below $${Math.abs(overdraftLimit).toFixed(2)}'
+    WHERE user_id = ${userId} AND status IN ('running','syncing','pending')
+    RETURNING id, job_number, title
+  ` as Record<string, unknown>[]
+
+  // Fail all running/pending tasks for those jobs
+  if (killedJobs.length > 0) {
+    const jobIds = killedJobs.map(j => Number(j.id))
+    await sql`
+      UPDATE tasks SET status = 'failed'
+      WHERE job_id = ANY(${jobIds}::int[]) AND status IN ('running','pending','queued')
+    `.catch(() => null)
+  }
+
+  // Hold any queued/held-scout jobs under this user
+  await sql`
+    UPDATE jobs SET status = 'holding', held_for_debt = TRUE
+    WHERE user_id = ${userId} AND status IN ('queued','holding','upload_pending')
+    AND (held_for_debt IS NULL OR held_for_debt = FALSE)
+  `.catch(() => null)
+
+  // Email user
+  const dashUrl = baseUrl()
+  sendEmail({
+    to: email,
+    subject: '⚠ Renderfarm — Overdraft limit reached, rendering paused',
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;background:#0f1117;border-radius:8px;color:#e2e8f0">
+        <div style="background:#7f1d1d;border-radius:6px;padding:4px 14px;display:inline-block;margin-bottom:16px;font-size:13px;font-weight:600;color:#fca5a5;">
+          OVERDRAFT LIMIT REACHED
+        </div>
+        <h2 style="color:#fff;margin-top:0">Your rendering has been paused</h2>
+        <p style="color:#94a3b8;">Your account balance has reached <strong style="color:#f87171">$${balance.toFixed(2)}</strong>, which exceeds the overdraft limit of <strong>$${overdraftLimit.toFixed(2)}</strong>.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;margin:16px 0;">
+          <tr><td style="padding:8px 4px;color:#64748b;width:140px">Current balance</td><td style="padding:8px 4px;color:#f87171;font-weight:600">$${balance.toFixed(2)}</td></tr>
+          <tr><td style="padding:8px 4px;color:#64748b">Overdraft limit</td><td style="padding:8px 4px;color:#fff">$${overdraftLimit.toFixed(2)}</td></tr>
+          <tr><td style="padding:8px 4px;color:#64748b">Jobs affected</td><td style="padding:8px 4px;color:#fff">${killedJobs.length} job${killedJobs.length !== 1 ? 's' : ''} stopped</td></tr>
+        </table>
+        <p style="color:#94a3b8;">Add credits to your account to resume rendering. All queued jobs will restart automatically once your balance is above -$20.</p>
+        <a href="${dashUrl}/billing" style="display:inline-block;margin-top:8px;padding:12px 24px;background:#3b82f6;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Add Credits →</a>
+        <p style="color:#475569;font-size:12px;margin-top:24px;">
+          <a href="${dashUrl}" style="color:#475569">View Dashboard</a>
+        </p>
+      </div>`,
+  }).catch(() => null)
+
+  // Notify admin
+  const adminRows = await sql`SELECT email FROM users WHERE is_admin = TRUE AND is_active = TRUE LIMIT 1` as Record<string, unknown>[]
+  const adminEmail = adminRows[0]?.email as string | undefined
+  if (adminEmail) {
+    sendEmail({
+      to: adminEmail,
+      subject: `[Admin] Overdraft limit exceeded — ${email} ($${balance.toFixed(2)})`,
+      html: `
+        <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#fff">
+          <h2 style="color:#dc2626;margin-top:0">Overdraft Limit Exceeded</h2>
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <tr><td style="padding:6px 4px;color:#888;width:130px">User</td><td style="padding:6px 4px;">${email}</td></tr>
+            <tr><td style="padding:6px 4px;color:#888">Balance</td><td style="padding:6px 4px;color:#dc2626;font-weight:600">$${balance.toFixed(2)}</td></tr>
+            <tr><td style="padding:6px 4px;color:#888">Limit</td><td style="padding:6px 4px;">$${overdraftLimit.toFixed(2)}</td></tr>
+            <tr><td style="padding:6px 4px;color:#888">Jobs stopped</td><td style="padding:6px 4px;">${killedJobs.length}</td></tr>
+          </table>
+          <p><a href="${dashUrl}/admin" style="display:inline-block;margin-top:16px;padding:10px 20px;background:#6366f1;color:#fff;border-radius:5px;text-decoration:none;font-weight:600">Go to Admin →</a></p>
+        </div>`,
+    }).catch(() => null)
+  }
+
+  console.log(`[overdraft] User ${userId} (${email}) exceeded limit: $${balance.toFixed(2)} — ${killedJobs.length} jobs stopped`)
+}
+
+/** Called when a credit grant brings balance above 0 — releases debt-held jobs. */
+export async function clearDebtHold(userId: number, email?: string): Promise<void> {
+  const rows = await sql`SELECT debt_hold_since FROM users WHERE id = ${userId} LIMIT 1` as Record<string, unknown>[]
+  if (!rows.length || !rows[0].debt_hold_since) return  // not in debt hold
+
+  await sql`
+    UPDATE users SET debt_hold_since = NULL, overdraft_notified = FALSE, low_balance_notified_at = NULL
+    WHERE id = ${userId}
+  `
+
+  // Release all debt-held jobs back to pending
+  const released = await sql`
+    UPDATE jobs SET status = 'pending', held_for_debt = FALSE,
+      status_description = 'Released from debt hold — credits restored'
+    WHERE user_id = ${userId} AND (held_for_debt = TRUE OR status = 'holding')
+      AND status NOT IN ('success','failed','killed','downloaded')
+    RETURNING job_number, title
+  ` as Record<string, unknown>[]
+
+  if (released.length > 0 && email) {
+    sendEmail({
+      to: email,
+      subject: '✓ Renderfarm — Credits restored, rendering resumed',
+      html: `
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;background:#0f1117;border-radius:8px;color:#e2e8f0">
+          <h2 style="color:#fff;margin-top:0">Rendering Resumed</h2>
+          <p style="color:#94a3b8;">Your credits have been restored. <strong>${released.length} held job${released.length !== 1 ? 's' : ''}</strong> have been released and will start rendering now.</p>
+          <a href="${baseUrl()}/" style="display:inline-block;margin-top:16px;padding:12px 24px;background:#0d9488;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">View Jobs →</a>
+        </div>`,
+    }).catch(() => null)
+  }
+
+  console.log(`[overdraft] User ${userId} debt hold cleared — ${released.length} jobs released`)
 }
 
 // ---------------------------------------------------------------------------

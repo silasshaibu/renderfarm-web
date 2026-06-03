@@ -88,8 +88,11 @@ export async function POST(req: NextRequest) {
   await initDB()
   await ensureCreditSchema().catch(() => null)
 
-  // ── Suspension + credit-limit check ──────────────────────────────────────
-  const userRow = await sql`SELECT status, suspension_reason, credit_limit FROM users WHERE id = ${user.sub} LIMIT 1` as Record<string, unknown>[]
+  // ── Suspension + credit checks ────────────────────────────────────────────
+  const userRow = await sql`
+    SELECT status, suspension_reason, credit_limit, debt_hold_since, overdraft_limit
+    FROM users WHERE id = ${user.sub} LIMIT 1
+  ` as Record<string, unknown>[]
   if (userRow[0]?.status === 'suspended') {
     return NextResponse.json(
       { message: `Account suspended. Reason: ${userRow[0].suspension_reason ?? 'Contact support.'}` },
@@ -97,12 +100,13 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── Credit balance check ─────────────────────────────────────────────────
-  // credit_limit > 0 means admin has granted this user an overdraft allowance.
-  // Instead of blocking with 402, let the upload proceed but hold the job.
-  const balance     = await getBalance(user.sub).catch(() => 999) // fail open
-  const creditLimit = Number(userRow[0]?.credit_limit ?? 0)
-  const creditHold  = balance <= -creditLimit   // flag — job will be held, not rejected
+  const balance         = await getBalance(user.sub).catch(() => 999)
+  const creditLimit     = Number(userRow[0]?.credit_limit ?? 0)
+  const overdraftLimit  = Number(userRow[0]?.overdraft_limit ?? -20)
+  const inDebtHold      = Boolean(userRow[0]?.debt_hold_since)  // exceeded -$20
+
+  // Hold if: manual credit_limit exceeded OR overdraft limit exceeded
+  const creditHold = inDebtHold || balance <= -creditLimit
 
   const data = await req.json() as {
     title?:              string
@@ -169,9 +173,11 @@ export async function POST(req: NextRequest) {
   const assetsUploaded     = data.assets_uploaded  ?? 0
   const outputPath         = data.output_folder    ?? ''
   const statusDescription  = creditHold
-    ? (creditLimit > 0
-        ? `Outstanding balance limit reached ($${creditLimit.toFixed(2)}). Add credits to start rendering — visit your dashboard.`
-        : `No credits remaining. Add credits to your account to start rendering — visit your dashboard.`)
+    ? (inDebtHold
+        ? `Overdraft limit exceeded (balance $${balance.toFixed(2)}). Add credits to release this job.`
+        : creditLimit > 0
+          ? `Outstanding balance limit of $${creditLimit.toFixed(2)} reached. Add credits to start rendering.`
+          : `No credits remaining. Add credits to your account to start rendering.`)
     : (data.status_description ?? '')
   const provider           = data.provider         ?? 'renderfarm'
   const gcsScenePath       = data.gcs_scene_path   ?? ''
@@ -220,7 +226,7 @@ export async function POST(req: NextRequest) {
       manifest, assets_total, assets_uploaded,
       output_path, status_description, provider, gcs_scene_path,
       project_id, notification_email, notification_sound, notification_on,
-      render_settings
+      render_settings, held_for_debt
     )
     VALUES (
       ${jobNumber},
@@ -240,7 +246,8 @@ export async function POST(req: NextRequest) {
       ${notifEmail},
       ${notifSound},
       ${notifOn},
-      ${renderSettings}::jsonb
+      ${renderSettings}::jsonb,
+      ${creditHold}
     )
     RETURNING *
   `

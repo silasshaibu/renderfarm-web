@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth-server'
 import { sql, initDB } from '@/lib/db'
-import { ensureCreditSchema, addCredit, getBalance, logAudit } from '@/lib/credits'
+import { ensureCreditSchema, addCredit, getBalance, logAudit, clearDebtHold } from '@/lib/credits'
 import { sendEmail, baseUrl } from '@/lib/email'
 import { getIP } from '@/lib/rateLimit'
 
@@ -73,6 +73,13 @@ export async function POST(
   })
 
   const newBalance = await getBalance(id)
+
+  // If credit grant brings balance above overdraft limit, release held jobs
+  if (amount > 0) {
+    const userEmailRow = await sql`SELECT email FROM users WHERE id = ${id} LIMIT 1` as Record<string, unknown>[]
+    const ue = userEmailRow[0]?.email as string | undefined
+    await clearDebtHold(Number(id), ue).catch(() => null)
+  }
 
   // Audit log
   await logAudit({
