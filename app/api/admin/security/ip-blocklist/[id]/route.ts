@@ -4,7 +4,7 @@ import { sql, initDB } from '@/lib/db'
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const user = await verifyToken(req)
   if (!user?.is_admin) {
