@@ -4,6 +4,7 @@ import { INTERNAL_SECRET } from '@/lib/gcp/clients'
 import { getSignedDownloadUrls } from '@/lib/gcp/storage'
 import { syncJobStatus } from '@/lib/jobs/sync'
 import { ensureCreditSchema, addCredit, getBalance, maybeSendLowBalanceEmail } from '@/lib/credits'
+import { sendJobNotification, ensureNotificationSchema } from '@/lib/notifications'
 
 // POST { jobId, frame, status }
 // Called by the VM startup script when a frame finishes rendering.
@@ -16,6 +17,7 @@ export async function POST(req: NextRequest) {
 
   await initDB()
   await ensureCreditSchema().catch(() => null)
+  await ensureNotificationSchema().catch(() => null)
 
   // ── Cost calculation using calculator pricing model ───────────────────────
   // rate = (cores*0.048 + ramGb*0.006 + gpuHourly) * gcpMult(0.95)
@@ -152,8 +154,9 @@ export async function POST(req: NextRequest) {
       UPDATE jobs SET status = 'success', cost_usd = ${totalCost}, updated_at = NOW() WHERE id = ${jobId}
     `
     console.log(`Job ${jobId} complete — ${outputs.length} output files, ${doneCount} chunks done`)
-    // Suppress unused var warning — manifest may be used for future billing
     void manifest
+    // Fire notification email (non-blocking)
+    void sendJobNotification(jobId, 'success')
   } else {
     // Recompute job status from actual task states (running/pending/holding)
     const jobRow = await sql`SELECT status FROM jobs WHERE id = ${jobId} LIMIT 1`

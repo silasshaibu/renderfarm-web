@@ -324,6 +324,118 @@ function MfaSection() {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Notification Preferences section
+// ---------------------------------------------------------------------------
+interface NotifPrefs {
+  notifyEmail: boolean
+  notifyJobCompleted: boolean
+  notifyJobFailed: boolean
+  notifyWeeklyReport: boolean
+  notifyOn: 'BOTH' | 'SUCCESS' | 'FAILURE'
+}
+
+function NotificationsSection() {
+  const [prefs,   setPrefs]   = useState<NotifPrefs | null>(null)
+  const [saving,  setSaving]  = useState(false)
+  const [saved,   setSaved]   = useState(false)
+  const [err,     setErr]     = useState('')
+
+  useEffect(() => {
+    apiFetch('/api/profile/notifications')
+      .then(d => setPrefs(d as NotifPrefs))
+      .catch(() => null)
+  }, [])
+
+  const save = async () => {
+    if (!prefs) return
+    setSaving(true); setSaved(false); setErr('')
+    try {
+      await apiFetch('/api/profile/notifications', 'PATCH', prefs)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const toggle = (key: keyof NotifPrefs) =>
+    setPrefs(p => p ? { ...p, [key]: !p[key] } : p)
+
+  if (!prefs) return null
+
+  return (
+    <Card title="Notification Preferences">
+      <p className="text-xs text-gray-500 mb-4">
+        Set your default notification settings. These pre-fill the notification options in the Blender submitter for each new job.
+      </p>
+
+      {err && <p className="text-red-400 text-sm mb-3">{err}</p>}
+
+      <div className="flex flex-col gap-3">
+        {/* Master email toggle */}
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" checked={prefs.notifyEmail}
+            onChange={() => toggle('notifyEmail')}
+            className="w-4 h-4 accent-blue-500 rounded" />
+          <div>
+            <span className="text-sm text-gray-200">Email notifications</span>
+            <p className="text-xs text-gray-500 mt-0.5">Receive emails when render jobs complete</p>
+          </div>
+        </label>
+
+        {prefs.notifyEmail && (
+          <div className="pl-7 flex flex-col gap-2 border-l border-white/10 ml-2">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" checked={prefs.notifyJobCompleted}
+                onChange={() => toggle('notifyJobCompleted')}
+                className="w-4 h-4 accent-blue-500" />
+              <span className="text-sm text-gray-300">Job completed successfully</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" checked={prefs.notifyJobFailed}
+                onChange={() => toggle('notifyJobFailed')}
+                className="w-4 h-4 accent-blue-500" />
+              <span className="text-sm text-gray-300">Job failed</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" checked={prefs.notifyWeeklyReport}
+                onChange={() => toggle('notifyWeeklyReport')}
+                className="w-4 h-4 accent-blue-500" />
+              <span className="text-sm text-gray-300">Weekly usage report</span>
+            </label>
+
+            <div className="mt-2">
+              <p className="text-xs text-gray-500 mb-2">Default notify trigger:</p>
+              <div className="flex flex-col gap-1.5">
+                {([['BOTH', 'Success and failure'], ['SUCCESS', 'Success only'], ['FAILURE', 'Failure only']] as const).map(([val, label]) => (
+                  <label key={val} className="flex items-center gap-2.5 cursor-pointer">
+                    <input type="radio" name="notify_on" value={val}
+                      checked={prefs.notifyOn === val}
+                      onChange={() => setPrefs(p => p ? { ...p, notifyOn: val } : p)}
+                      className="accent-blue-500" />
+                    <span className="text-sm text-gray-300">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="pt-3 border-t border-white/10 flex items-center gap-3">
+          <button type="button" onClick={save} disabled={saving}
+            className="px-4 py-2 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save Preferences'}
+          </button>
+          {saved && <span className="text-xs text-green-400">Saved</span>}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 // Active Sessions section
 // ---------------------------------------------------------------------------
 function SessionsSection() {
@@ -730,6 +842,9 @@ export default function ProfilePage() {
           </div>
         </Card>
       </div>
+
+      {/* Notification Preferences */}
+      <NotificationsSection />
 
       {/* MFA */}
       <MfaSection />

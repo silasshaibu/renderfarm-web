@@ -206,12 +206,84 @@ export function ticketResolvedEmail(opts: {
   `)
 }
 
-export function jobCompleteEmail(opts: { email: string; jobNumber: string; title: string; frameCount: number }) {
-  const url = `${baseUrl()}/jobs/${opts.jobNumber}`
+function notifFooter(unsubUrl: string) {
+  return `<div class="footer" style="margin-top:28px;font-size:12px;color:#bbb;text-align:center;">
+    Renderfarm © ${new Date().getFullYear()} &nbsp;·&nbsp;
+    <a href="${baseUrl()}/profile" style="color:#bbb;">Manage notifications</a> &nbsp;·&nbsp;
+    <a href="${unsubUrl}" style="color:#bbb;">Unsubscribe from job alerts</a>
+  </div>`
+}
+
+export function jobCompleteEmail(opts: {
+  email: string; jobNumber: string; title: string; frameCount: number
+  duration?: string; costUsd?: number; balance?: number; unsubToken?: string
+}) {
+  const jobUrl   = `${baseUrl()}/jobs/${opts.jobNumber}`
+  const unsubUrl = `${baseUrl()}/api/notifications/unsubscribe?token=${opts.unsubToken ?? ''}`
+  const num      = opts.frameCount
   return wrap(`
-    <h2>Job complete: ${opts.jobNumber}</h2>
-    <p>Your render job <strong>${opts.title}</strong> has finished.</p>
-    <p>${opts.frameCount} frame${opts.frameCount === 1 ? '' : 's'} are ready to download.</p>
-    <p><a class="btn" href="${url}">View job &amp; download frames</a></p>
-  `)
+    <div style="display:inline-block;background:#0d9488;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:16px;">
+      ✓ Render Complete
+    </div>
+    <h2 style="margin-top:0;">Your render job is done</h2>
+    <p>Great news — <strong>${opts.title}</strong> has finished successfully.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin:16px 0;">
+      <tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:8px 4px;color:#888;width:130px;">Job</td>
+        <td style="padding:8px 4px;font-weight:600;">${opts.title}</td>
+      </tr>
+      <tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:8px 4px;color:#888;">Job ID</td>
+        <td style="padding:8px 4px;font-family:monospace;">#${opts.jobNumber}</td>
+      </tr>
+      <tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:8px 4px;color:#888;">Frames</td>
+        <td style="padding:8px 4px;">${num} frame${num === 1 ? '' : 's'}</td>
+      </tr>
+      ${opts.duration ? `<tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:8px 4px;color:#888;">Duration</td><td style="padding:8px 4px;">${opts.duration}</td></tr>` : ''}
+      ${opts.costUsd != null ? `<tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:8px 4px;color:#888;">Cost</td><td style="padding:8px 4px;">$${opts.costUsd.toFixed(4)}</td></tr>` : ''}
+      ${opts.balance != null ? `<tr><td style="padding:8px 4px;color:#888;">Remaining credits</td><td style="padding:8px 4px;font-weight:600;">$${opts.balance.toFixed(2)}</td></tr>` : ''}
+    </table>
+    <p style="margin-top:20px;">
+      <a class="btn" href="${jobUrl}">View Job &amp; Download Frames</a>
+    </p>
+  `) + notifFooter(unsubUrl)
+}
+
+export function jobFailedEmail(opts: {
+  email: string; jobNumber: string; title: string
+  errorMessage?: string; taskId?: string | number; unsubToken?: string
+}) {
+  const jobUrl   = `${baseUrl()}/jobs/${opts.jobNumber}`
+  const unsubUrl = `${baseUrl()}/api/notifications/unsubscribe?token=${opts.unsubToken ?? ''}`
+  return wrap(`
+    <div style="display:inline-block;background:#ef4444;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:16px;">
+      ✗ Render Failed
+    </div>
+    <h2 style="margin-top:0;">Your render job encountered an error</h2>
+    <p>Unfortunately, <strong>${opts.title}</strong> did not complete successfully.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin:16px 0;">
+      <tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:8px 4px;color:#888;width:130px;">Job</td>
+        <td style="padding:8px 4px;font-weight:600;">${opts.title}</td>
+      </tr>
+      <tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:8px 4px;color:#888;">Job ID</td>
+        <td style="padding:8px 4px;font-family:monospace;">#${opts.jobNumber}</td>
+      </tr>
+      ${opts.taskId != null ? `<tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:8px 4px;color:#888;">Failed Task</td><td style="padding:8px 4px;">Task ${opts.taskId}</td></tr>` : ''}
+      ${opts.errorMessage ? `<tr><td style="padding:8px 4px;color:#888;vertical-align:top;">Error</td><td style="padding:8px 4px;font-family:monospace;font-size:12px;word-break:break-all;">${opts.errorMessage.slice(0, 300)}</td></tr>` : ''}
+    </table>
+    <p style="font-weight:600;margin-bottom:8px;">Common fixes:</p>
+    <ul style="color:#555;font-size:14px;line-height:1.8;padding-left:20px;">
+      <li>Check for missing textures or linked files</li>
+      <li>Verify the output path is set correctly</li>
+      <li>Try a machine type with more RAM</li>
+    </ul>
+    <p style="margin-top:20px;">
+      <a class="btn" href="${jobUrl}">View Job Logs</a>
+      &nbsp;&nbsp;
+      <a href="${baseUrl()}/support" style="color:#0d9488;font-size:14px;">Contact Support</a>
+    </p>
+  `) + notifFooter(unsubUrl)
 }

@@ -179,12 +179,24 @@ export async function POST(req: NextRequest) {
   const provider           = data.provider         ?? 'renderfarm'
   const gcsScenePath       = data.gcs_scene_path   ?? ''
 
+  // Notification prefs from Blender addon payload
+  const notifData      = (data as Record<string, unknown>).notifications as Record<string, unknown> | undefined
+  const notifEmail     = Boolean(notifData?.email     ?? true)
+  const notifSound     = Boolean(notifData?.sound     ?? false)
+  const notifOn        = String(notifData?.notify_on  ?? 'BOTH')
+
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notification_email   BOOLEAN DEFAULT FALSE`.catch(() => null)
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notification_sound   BOOLEAN DEFAULT FALSE`.catch(() => null)
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notification_on      TEXT    DEFAULT 'BOTH'`.catch(() => null)
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notification_sent    BOOLEAN DEFAULT FALSE`.catch(() => null)
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notification_sent_at TIMESTAMPTZ DEFAULT NULL`.catch(() => null)
+
   const rows = await sql`
     INSERT INTO jobs (
       job_number, title, frames, software, blender_file, status,
       manifest, assets_total, assets_uploaded,
       output_path, status_description, provider, gcs_scene_path,
-      project_id
+      project_id, notification_email, notification_sound, notification_on
     )
     VALUES (
       ${jobNumber},
@@ -200,7 +212,10 @@ export async function POST(req: NextRequest) {
       ${statusDescription},
       ${provider},
       ${gcsScenePath},
-      ${projectIdNum}
+      ${projectIdNum},
+      ${notifEmail},
+      ${notifSound},
+      ${notifOn}
     )
     RETURNING *
   `
