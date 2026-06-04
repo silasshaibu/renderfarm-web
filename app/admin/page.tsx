@@ -1729,12 +1729,15 @@ function StripeCardForm({ onClose, onSuccess }: { onClose: () => void; onSuccess
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('rf_token') ?? ''}` },
       })
-      const { clientSecret } = await res.json() as { clientSecret: string }
+      const data = await res.json() as { clientSecret?: string; message?: string }
+      if (!res.ok || !data.clientSecret) {
+        throw new Error(data.message ?? 'Failed to create setup intent. Check Stripe API keys in Vercel.')
+      }
 
       const cardNumber = elements.getElement(CardNumberElement)
       if (!cardNumber) throw new Error('Card element not found')
 
-      const result = await stripe.confirmCardSetup(clientSecret, {
+      const result = await stripe.confirmCardSetup(data.clientSecret, {
         payment_method: { card: cardNumber },
       })
 
