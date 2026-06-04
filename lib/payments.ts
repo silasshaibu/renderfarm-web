@@ -2,9 +2,16 @@ import Stripe from 'stripe'
 import { sql, initDB } from './db'
 import { addCredit } from './credits'
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
-  apiVersion: '2025-05-28.basil',
-})
+// Lazy singleton — only instantiated at runtime when the key is available
+let _stripe: Stripe | null = null
+export function getStripe(): Stripe {
+  if (!_stripe) {
+    const key = process.env.STRIPE_SECRET_KEY
+    if (!key) throw new Error('STRIPE_SECRET_KEY is not set')
+    _stripe = new Stripe(key, { apiVersion: '2025-05-28.basil' })
+  }
+  return _stripe
+}
 
 export const BONUS_MAP: Record<string, number> = { '100': 0, '500': 50, '1000': 150 }
 
@@ -64,7 +71,7 @@ export async function getOrCreateStripeCustomer(userId: number | string): Promis
     return rows[0].stripe_customer_id as string
   }
 
-  const customer = await stripe.customers.create({
+  const customer = await getStripe().customers.create({
     email: rows[0].email as string,
     metadata: { user_id: String(userId), platform: 'renderfarm' },
   })
@@ -77,10 +84,10 @@ export async function getOrCreateStripeCustomer(userId: number | string): Promis
 /** List saved payment methods for a user */
 export async function listPaymentMethods(userId: number | string) {
   const customerId = await getOrCreateStripeCustomer(userId)
-  const methods = await stripe.paymentMethods.list({ customer: customerId, type: 'card' })
+  const methods = await getStripe().paymentMethods.list({ customer: customerId, type: 'card' })
 
   // Get default payment method
-  const customer = await stripe.customers.retrieve(customerId)
+  const customer = await getStripe().customers.retrieve(customerId)
   const defaultPM = (customer as Stripe.Customer).invoice_settings?.default_payment_method
 
   return methods.data.map(pm => ({
@@ -96,7 +103,7 @@ export async function listPaymentMethods(userId: number | string) {
 /** Create a Stripe SetupIntent to save a card */
 export async function createSetupIntent(userId: number | string) {
   const customerId = await getOrCreateStripeCustomer(userId)
-  const intent = await stripe.setupIntents.create({
+  const intent = await getStripe().setupIntents.create({
     customer: customerId,
     payment_method_types: ['card'],
     usage: 'off_session',
@@ -121,16 +128,16 @@ export async function chargeAndCredit(
   // Resolve which card to charge
   let pmId = paymentMethodId
   if (!pmId) {
-    const customer = await stripe.customers.retrieve(customerId)
+    const customer = await getStripe().customers.retrieve(customerId)
     pmId = (customer as Stripe.Customer).invoice_settings?.default_payment_method as string
   }
   if (!pmId) {
-    const methods = await stripe.paymentMethods.list({ customer: customerId, type: 'card' })
+    const methods = await getStripe().paymentMethods.list({ customer: customerId, type: 'card' })
     pmId = methods.data[0]?.id
   }
   if (!pmId) throw new Error('No payment method on file. Add a card first.')
 
-  const intent = await stripe.paymentIntents.create({
+  const intent = await getStripe().paymentIntents.create({
     amount: Math.round(amountUSD * 100),
     currency: 'usd',
     customer: customerId,
@@ -144,7 +151,7 @@ export async function chargeAndCredit(
     throw new Error(`Payment failed: ${intent.status}`)
   }
 
-  const pm = await stripe.paymentMethods.retrieve(pmId)
+  const pm = await getStripe().paymentMethods.retrieve(pmId)
 
   // Record transaction
   const txRows = await sql`
@@ -179,16 +186,16 @@ export async function detachCard(userId: number | string, paymentMethodId: strin
   const customerId = await getOrCreateStripeCustomer(userId)
 
   // Verify the card belongs to this customer
-  const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
+  const pm = await getStripe().paymentMethods.retrieve(paymentMethodId)
   if (pm.customer !== customerId) throw new Error('Card not found on this account')
 
-  await stripe.paymentMethods.detach(paymentMethodId)
+  await getStripe().paymentMethods.detach(paymentMethodId)
 }
 
 /** Set a card as the default for a customer */
 export async function setDefaultCard(userId: number | string, paymentMethodId: string) {
   const customerId = await getOrCreateStripeCustomer(userId)
-  await stripe.customers.update(customerId, {
+  await getStripe().customers.update(customerId, {
     invoice_settings: { default_payment_method: paymentMethodId },
   })
 }
