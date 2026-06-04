@@ -128,6 +128,59 @@ function OverdraftBanner() {
   return null
 }
 
+function CardRequiredBanner() {
+  const [status, setStatus] = useState<{
+    cardRequired: boolean; approaching: boolean; freeRemaining: number; freeLimit: number
+  } | null>(null)
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+    if (!token) return
+    fetch('/api/profile/card-status', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then((d) => { if (d && (d.cardRequired || d.approaching)) setStatus(d) })
+      .catch(() => null)
+  }, [])
+
+  if (!status) return null
+
+  if (status.cardRequired) {
+    return (
+      <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-blue-950/50 border border-blue-700/50 text-sm">
+        <span className="text-blue-300 text-base shrink-0 mt-0.5">💳</span>
+        <div className="flex-1">
+          <p className="text-blue-200 font-medium">Add a payment card to continue rendering</p>
+          <p className="text-blue-300/80 text-xs mt-0.5">
+            You&apos;ve used your ${status.freeLimit.toFixed(2)} free trial. Add a card to keep rendering —
+            you <strong className="text-blue-200">won&apos;t be charged</strong> until you exceed your remaining credits.
+          </p>
+        </div>
+        <a href="/admin?tab=payment"
+          className="shrink-0 px-3 py-1.5 rounded text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors whitespace-nowrap">
+          Add Card →
+        </a>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-950/40 border border-amber-700/40 text-sm">
+      <span className="text-amber-400 shrink-0 mt-0.5">⚠</span>
+      <div className="flex-1">
+        <p className="text-amber-300 font-medium">Free trial almost used up</p>
+        <p className="text-amber-400/80 text-xs mt-0.5">
+          <strong className="text-amber-300">${status.freeRemaining.toFixed(2)}</strong> of free rendering left.
+          Add a card now to avoid interruption — no charge until you exceed your credits.
+        </p>
+      </div>
+      <a href="/admin?tab=payment"
+        className="shrink-0 px-3 py-1.5 rounded text-xs font-medium border border-amber-600/50 text-amber-400 hover:border-amber-500 transition-colors whitespace-nowrap">
+        Add Card
+      </a>
+    </div>
+  )
+}
+
 export default function JobsPage() {
   const router = useRouter()
   const { data, loading, syncing, error, refetch } = useApiFetch(() => jobsApi.list())
@@ -192,6 +245,7 @@ export default function JobsPage() {
       </div>
 
       <OverdraftBanner />
+      <CardRequiredBanner />
 
       {error && (
         <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded px-4 py-3">

@@ -40,6 +40,65 @@ export async function ensureBillingSchema(): Promise<void> {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_retry_count INTEGER DEFAULT 0`.catch(() => null)
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_billing_attempt TIMESTAMPTZ NULL`.catch(() => null)
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_flagged BOOLEAN DEFAULT FALSE`.catch(() => null)
+
+  // card fingerprint (anti multi-account abuse) + card-required job hold flag
+  await sql`ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS fingerprint TEXT NULL`.catch(() => null)
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS held_for_card BOOLEAN DEFAULT FALSE`.catch(() => null)
+}
+
+// Free compute a new user can consume before a payment card is required.
+// They keep the rest of their welcome bonus — the card is for identity/abuse
+// verification and is only charged later if they exceed the overdraft limit.
+export const FREE_USAGE_WITHOUT_CARD = 10.00
+
+/** Does the user have a non-removed payment method on file? */
+export async function hasActiveCard(userId: number): Promise<boolean> {
+  await ensureBillingSchema()
+  const rows = await sql`
+    SELECT 1 FROM payment_methods WHERE user_id = ${userId} AND removed_at IS NULL LIMIT 1
+  ` as Record<string, unknown>[]
+  return rows.length > 0
+}
+
+/** Total compute consumed (absolute value of usage-type credit entries). */
+export async function getUsageConsumed(userId: number): Promise<number> {
+  const rows = await sql`
+    SELECT COALESCE(SUM(amount), 0) AS s FROM credits WHERE user_id = ${userId} AND type = 'usage'
+  ` as Record<string, unknown>[]
+  return Math.abs(Number(rows[0]?.s ?? 0))
+}
+
+/**
+ * A cardless user must add a card once they've consumed the free-usage cap.
+ * Once a card is on file, the gate never applies again.
+ */
+export async function requiresCardToContinue(userId: number): Promise<{
+  required: boolean
+  hasCard: boolean
+  usageConsumed: number
+  freeLimit: number
+}> {
+  const hasCard = await hasActiveCard(userId)
+  const usageConsumed = await getUsageConsumed(userId)
+  return {
+    required: !hasCard && usageConsumed >= FREE_USAGE_WITHOUT_CARD,
+    hasCard,
+    usageConsumed,
+    freeLimit: FREE_USAGE_WITHOUT_CARD,
+  }
+}
+
+/** Release jobs held only because a card was required (after a card is added). */
+export async function releaseCardHeldJobs(userId: number): Promise<number> {
+  const released = await sql`
+    UPDATE jobs
+    SET status = 'pending', held_for_card = FALSE,
+        status_description = 'Released — payment card added'
+    WHERE user_id = ${userId} AND held_for_card = TRUE
+      AND status NOT IN ('success','failed','killed','downloaded')
+    RETURNING job_number
+  `.catch(() => []) as Record<string, unknown>[]
+  return released.length
 }
 
 /** Save a Stripe payment method to local DB and attach to customer */
@@ -73,11 +132,24 @@ export async function savePaymentMethod(
   ` as Record<string, unknown>[]
   if (existingPm.length > 0) return
 
+  // Get card details (incl. fingerprint — same physical card = same fingerprint)
+  const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
+  const fingerprint = pm.card?.fingerprint ?? null
+
+  // Anti-abuse: reject a card already linked to a different account
+  if (fingerprint) {
+    const dup = await sql`
+      SELECT 1 FROM payment_methods
+      WHERE fingerprint = ${fingerprint} AND user_id <> ${userId} AND removed_at IS NULL
+      LIMIT 1
+    ` as Record<string, unknown>[]
+    if (dup.length > 0) {
+      throw new Error('This card is already linked to another account. Each account needs its own payment card.')
+    }
+  }
+
   // Attach payment method to customer
   await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId }).catch(() => null)
-
-  // Get card details
-  const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
 
   // Check if this is the first card (make default)
   const existingRows = await sql`
@@ -92,11 +164,14 @@ export async function savePaymentMethod(
   }
 
   await sql`
-    INSERT INTO payment_methods (user_id, stripe_pm_id, brand, last4, exp_month, exp_year, is_default)
+    INSERT INTO payment_methods (user_id, stripe_pm_id, brand, last4, exp_month, exp_year, is_default, fingerprint)
     VALUES (${userId}, ${paymentMethodId}, ${pm.card?.brand ?? 'card'},
             ${pm.card?.last4 ?? '****'}, ${pm.card?.exp_month ?? 0},
-            ${pm.card?.exp_year ?? 0}, ${isFirst})
+            ${pm.card?.exp_year ?? 0}, ${isFirst}, ${fingerprint})
   `
+
+  // Release any jobs that were held only because a card was required
+  await releaseCardHeldJobs(userId).catch(() => null)
 
   if (isFirst) {
     await sql`UPDATE payment_methods SET is_default = FALSE WHERE user_id = ${userId} AND stripe_pm_id != ${paymentMethodId}`

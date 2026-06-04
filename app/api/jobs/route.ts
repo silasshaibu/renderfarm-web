@@ -6,6 +6,7 @@ import { spawnChunkVMs } from '@/lib/gcp/compute'
 import { INTERNAL_SECRET } from '@/lib/gcp/clients'
 import { parseFrameRange, chunkFrames, resolveScoutFrames } from '@/lib/utils/frames'
 import { ensureCreditSchema, getBalance } from '@/lib/credits'
+import { requiresCardToContinue } from '@/lib/billing'
 import { checkIPBlocklist, getClientIP } from '@/lib/middleware/ipBlocklist'
 import {
   checkFileSizeLimit,
@@ -131,6 +132,12 @@ export async function POST(req: NextRequest) {
   // Hold if: manual credit_limit exceeded OR overdraft limit exceeded
   const creditHold = inDebtHold || balance <= -creditLimit
 
+  // Free-trial gate: cardless user who has consumed the free-usage cap must add a card
+  const cardGate = await requiresCardToContinue(Number(user.sub)).catch(() => ({
+    required: false, hasCard: true, usageConsumed: 0, freeLimit: 10,
+  }))
+  const cardRequired = cardGate.required
+
   const data = await req.json() as {
     title?:              string
     frames?:             string
@@ -183,8 +190,9 @@ export async function POST(req: NextRequest) {
   const baseStatus = (data.status && VALID_STATUSES.includes(data.status))
     ? data.status
     : 'queued'
-  // If user has no credits, hold the job instead of letting it dispatch
-  const status = creditHold ? 'holding' : baseStatus
+  // Hold the job if: out of credits OR free trial used up and no card on file
+  const isHeld = creditHold || cardRequired
+  const status = isHeld ? 'holding' : baseStatus
 
   // Generate next RF-XXXX number
   const countRows = await sql`SELECT COUNT(*) AS cnt FROM jobs`
@@ -195,7 +203,9 @@ export async function POST(req: NextRequest) {
   const assetsTotal        = data.assets_total    ?? 0
   const assetsUploaded     = data.assets_uploaded  ?? 0
   const outputPath         = data.output_folder    ?? ''
-  const statusDescription  = creditHold
+  const statusDescription  = cardRequired
+    ? `Free trial used up ($${cardGate.freeLimit.toFixed(2)}). Add a payment card to keep rendering — you won't be charged until you exceed your free credits.`
+    : creditHold
     ? (inDebtHold
         ? `Overdraft limit exceeded (balance $${balance.toFixed(2)}). Add credits to release this job.`
         : creditLimit > 0
@@ -249,7 +259,7 @@ export async function POST(req: NextRequest) {
       manifest, assets_total, assets_uploaded,
       output_path, status_description, provider, gcs_scene_path,
       project_id, notification_email, notification_sound, notification_on,
-      render_settings, held_for_debt
+      render_settings, held_for_debt, held_for_card
     )
     VALUES (
       ${jobNumber},
@@ -270,12 +280,50 @@ export async function POST(req: NextRequest) {
       ${notifSound},
       ${notifOn},
       ${renderSettings}::jsonb,
-      ${creditHold}
+      ${creditHold},
+      ${cardRequired}
     )
     RETURNING *
   `
 
   const job = rowToJob(rows[0] as Record<string, unknown>)
+
+  // ── Card-required hold: free trial used up, no card on file ────────────────
+  if (cardRequired) {
+    const userEmailRow = await sql`SELECT email FROM users WHERE id = ${user.sub} LIMIT 1` as Record<string, unknown>[]
+    const userEmail = userEmailRow[0]?.email as string | undefined
+    if (userEmail) {
+      const payUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'https://renderfarm.swade-art.com') + '/admin?tab=payment'
+      sendEmail({
+        to: userEmail,
+        subject: `Add a card to continue rendering — ${String(job.jobNumber)}`,
+        html: `
+          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;border-radius:8px;color:#e2e8f0;">
+            <h2 style="color:#fff;margin-top:0;">Add a Payment Card to Continue</h2>
+            <p style="color:#94a3b8;line-height:1.6;">
+              You've used your <strong>$${cardGate.freeLimit.toFixed(2)}</strong> free trial. Your job
+              <strong>${String(job.jobNumber)}</strong> is saved and on hold.
+            </p>
+            <p style="color:#94a3b8;line-height:1.6;">
+              Add a payment card to keep rendering. <strong>You won't be charged</strong> until you
+              exceed your remaining free credits — the card just verifies your account.
+            </p>
+            <p><a href="${payUrl}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Add Payment Card →</a></p>
+          </div>`,
+      }).catch(() => null)
+    }
+
+    return NextResponse.json({
+      jobNumber:  job.jobNumber,
+      id:         job.id,
+      held:       true,
+      holdReason: 'card_required',
+      message:    statusDescription,
+      usageConsumed: cardGate.usageConsumed,
+      freeLimit:  cardGate.freeLimit,
+      balance,
+    }, { status: 201 })
+  }
 
   // ── Credit hold: notify user + admin, skip VM dispatch ────────────────────
   if (creditHold) {
