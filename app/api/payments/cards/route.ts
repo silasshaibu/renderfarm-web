@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth-server'
-import { listPaymentMethods, createSetupIntent } from '@/lib/payments'
+import { listSavedCards } from '@/lib/billing'
+import { createSetupIntent } from '@/lib/payments'
 
 export async function GET(req: NextRequest) {
   const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
   try {
-    const cards = await listPaymentMethods(user.sub)
+    const cards = await listSavedCards(Number(user.sub))
     return NextResponse.json(cards)
   } catch (e) {
     console.error('[payments/cards] GET error:', e)

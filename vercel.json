@@ -19,6 +19,14 @@
     {
       "path": "/api/cron/abuse-decay",
       "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/cron/monthly-billing",
+      "schedule": "0 2 1 * *"
+    },
+    {
+      "path": "/api/cron/billing-retry",
+      "schedule": "0 2 * * *"
     }
   ]
 }

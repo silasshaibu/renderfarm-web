@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getStripe } from '@/lib/payments'
+import { savePaymentMethod } from '@/lib/billing'
 import { sql, initDB } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
 
@@ -22,6 +23,19 @@ export async function POST(req: NextRequest) {
   await initDB()
 
   switch (event.type) {
+    // Card saved via SetupIntent — persist to our DB
+    case 'setup_intent.succeeded': {
+      const si = event.data.object
+      const pmId = typeof si.payment_method === 'string' ? si.payment_method : null
+      const userId = si.metadata?.user_id
+      if (pmId && userId) {
+        await savePaymentMethod(Number(userId), pmId).catch(e =>
+          console.error('[stripe-webhook] savePaymentMethod error:', e)
+        )
+      }
+      break
+    }
+
     case 'payment_intent.succeeded': {
       const pi = event.data.object
       // Mark transaction settled (in case webhook fires before charge response)

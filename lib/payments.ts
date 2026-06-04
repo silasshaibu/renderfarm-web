@@ -107,6 +107,7 @@ export async function createSetupIntent(userId: number | string) {
     customer: customerId,
     payment_method_types: ['card'],
     usage: 'off_session',
+    metadata: { user_id: String(userId) },
   })
   return {
     clientSecret: intent.client_secret,
