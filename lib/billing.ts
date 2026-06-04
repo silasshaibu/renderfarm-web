@@ -67,8 +67,14 @@ export async function savePaymentMethod(
     await sql`UPDATE users SET stripe_customer_id = ${customerId} WHERE id = ${userId}`
   }
 
+  // Skip if already saved
+  const existingPm = await sql`
+    SELECT id FROM payment_methods WHERE user_id = ${userId} AND stripe_pm_id = ${paymentMethodId} AND removed_at IS NULL LIMIT 1
+  ` as Record<string, unknown>[]
+  if (existingPm.length > 0) return
+
   // Attach payment method to customer
-  await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId })
+  await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId }).catch(() => null)
 
   // Get card details
   const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
