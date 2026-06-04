@@ -887,9 +887,7 @@ export default function ProfilePage() {
         {/* Profile Details */}
         <Card title="Profile Details">
           <div className="flex flex-col gap-4">
-            <ReadField label="Name"    value={fullName} />
             <ReadField label="Email"   value={email} />
-            <ReadField label="Account" value={accountName} />
 
             {creditBal !== null && (
               <div className="flex flex-col gap-1">
@@ -924,7 +922,7 @@ export default function ProfilePage() {
 
         {/* API Key Instructions */}
         <Card title="API Key Instructions">
-          <div className="flex flex-col gap-4 h-full">
+          <div className="flex flex-col gap-4">
             <p className="text-sm text-gray-400">
               Use your API key to authenticate with the Renderfarm API and CLI tools from scripts and pipelines.
             </p>
@@ -942,7 +940,7 @@ export default function ProfilePage() {
                 Regenerating immediately invalidates the old key
               </li>
             </ul>
-            <div className="mt-auto pt-2">
+            <div className="pt-2">
               <button type="button" onClick={() => setShowApiKey(true)}
                 className="px-4 py-2 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors">
                 Get API Key
