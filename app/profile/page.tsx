@@ -132,11 +132,11 @@ function EditableField({
   }
 
   return (
-    <div className="flex items-center gap-2 group">
+    <div className="flex items-center gap-2">
       <span className="text-sm text-gray-500 w-20 shrink-0">{label}</span>
       <span className="text-sm text-gray-200">{value || <span className="text-gray-600 italic">—</span>}</span>
       <button type="button" onClick={begin}
-        className="text-xs text-blue-400 hover:text-blue-300 transition-colors opacity-0 group-hover:opacity-100 ml-1">
+        className="text-xs text-blue-400 hover:text-blue-300 transition-colors ml-auto">
         Edit
       </button>
     </div>
