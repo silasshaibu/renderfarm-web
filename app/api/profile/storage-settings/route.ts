@@ -4,7 +4,7 @@ import { sql, initDB } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   const user = await verifyToken(req)
-  if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
+  if (!user?.isSuperAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 
   await initDB()
 
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const user = await verifyToken(req)
-  if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
+  if (!user?.isSuperAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 
   await initDB()
 

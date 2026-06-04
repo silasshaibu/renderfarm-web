@@ -806,6 +806,7 @@ function CreditHistoryModal({ onClose, email: userEmail }: { onClose: () => void
 // ---------------------------------------------------------------------------
 export default function ProfilePage() {
   const [loading,      setLoading]      = useState(true)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [firstName,    setFirstName]    = useState('')
   const [lastName,     setLastName]     = useState('')
   const [email,        setEmail]        = useState('')
@@ -838,6 +839,17 @@ export default function ProfilePage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Decode JWT to check super-admin status
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const token = localStorage.getItem('rf_token')
+      if (!token) return
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      setIsSuperAdmin(Boolean(payload.isSuperAdmin))
+    } catch { /* ignore */ }
+  }, [])
 
   const handleResetPassword = async () => {
     setResetting(true); setResetErr(''); setResetSent(false)
@@ -946,8 +958,8 @@ export default function ProfilePage() {
       {/* MFA */}
       <MfaSection />
 
-      {/* Storage Settings */}
-      <StorageSettingsSection />
+      {/* Storage Settings — super admins only */}
+      {isSuperAdmin && <StorageSettingsSection />}
 
       {/* Active Sessions */}
       <SessionsSection />
