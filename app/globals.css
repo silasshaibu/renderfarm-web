@@ -620,9 +620,30 @@ select.calc-input {
   color: #e5e7eb;
   font-size: 0.85rem;
   padding: 0.5rem 0.75rem;
+  min-height: 42px;
+  box-sizing: border-box;
 }
 .payment-field-input:focus { outline: none; box-shadow: 0 0 0 2px #3b82f6; }
 .payment-field-input::placeholder { color: #4b5563; }
+
+/* Stripe Elements iframe container */
+.stripe-element-wrap {
+  display: block;
+  width: 100%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 0.3rem;
+  padding: 11px 12px;
+  min-height: 42px;
+  box-sizing: border-box;
+  cursor: text;
+  transition: box-shadow 0.15s;
+}
+.stripe-element-wrap:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 2px #3b82f6;
+  border-color: #3b82f6;
+}
 
 /* ── Cost Limit modal ─────────────────────────────────────────────────────── */
 .cost-limit-modal-card {

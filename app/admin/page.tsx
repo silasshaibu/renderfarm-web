@@ -1754,7 +1754,7 @@ function StripeCardForm({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
       <div>
         <label className="payment-field-label">Card Number</label>
-        <div className="payment-field-input">
+        <div className="stripe-element-wrap">
           <CardNumberElement options={{ style: stripeElementStyle, showIcon: true }} />
         </div>
       </div>
@@ -1762,13 +1762,13 @@ function StripeCardForm({ onClose, onSuccess }: { onClose: () => void; onSuccess
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="payment-field-label">Expiration Date</label>
-          <div className="payment-field-input">
+          <div className="stripe-element-wrap">
             <CardExpiryElement options={{ style: stripeElementStyle }} />
           </div>
         </div>
         <div>
           <label className="payment-field-label">CVV</label>
-          <div className="payment-field-input">
+          <div className="stripe-element-wrap">
             <CardCvcElement options={{ style: stripeElementStyle }} />
           </div>
         </div>
