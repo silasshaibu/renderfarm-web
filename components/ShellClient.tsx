@@ -7,6 +7,32 @@ import Sidebar from './Sidebar'
 const YEAR = new Date().getFullYear()
 const AUTH_PATHS = ['/login', '/logout', '/register']
 
+function deriveDisplayName(email: string): string {
+  if (!email) return ''
+  const local = (email.split('@')[0] ?? '').replace(/[0-9]+$/g, '')
+  const parts = local.split(/[._-]+/).filter(Boolean)
+  return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+}
+
+function UserGreeting() {
+  const [name, setName] = useState('')
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+    if (!token) return
+    fetch('/api/profile', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { firstName?: string; lastName?: string; accountName?: string; email?: string } | null) => {
+        if (!d) return
+        const full = [d.firstName, d.lastName].filter(Boolean).join(' ')
+        setName(d.accountName || full || deriveDisplayName(d.email ?? ''))
+      })
+      .catch(() => null)
+  }, [])
+
+  return <span className="text-white font-bold text-3xl">{name || ' '}</span>
+}
+
 function HamburgerIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
@@ -85,7 +111,7 @@ export default function ShellClient({ children }: { children: React.ReactNode })
             <HamburgerIcon />
           </button>
 
-          <span className="text-white font-bold text-3xl">Silas</span>
+          <UserGreeting />
 
           <div className="flex items-center gap-4 text-sm ml-auto">
 

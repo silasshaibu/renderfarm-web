@@ -20,6 +20,17 @@ async function apiFetch(path: string, method = 'GET', body?: object) {
   return res.json()
 }
 
+// Derive a clean display name from an email's local part.
+// e.g. "silasshaibu2@gmail.com" -> "Silasshaibu", "jane.doe@x.com" -> "Jane Doe"
+export function deriveDisplayName(email: string): string {
+  if (!email) return '—'
+  const local = email.split('@')[0] ?? ''
+  const cleaned = local.replace(/[0-9]+$/g, '')          // strip trailing digits
+  const parts = cleaned.split(/[._-]+/).filter(Boolean)  // split on separators
+  if (parts.length === 0) return '—'
+  return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -872,7 +883,10 @@ export default function ProfilePage() {
     </div>
   )
 
-  const fullName = [firstName, lastName].filter(Boolean).join(' ') || '—'
+  // Derive a clean display name from the email when no name is stored
+  const derived = deriveDisplayName(email)
+  const fullName       = [firstName, lastName].filter(Boolean).join(' ') || derived
+  const accountDisplay = accountName || derived
 
   return (
     <div className="flex flex-col gap-6 max-w-6xl">
@@ -887,7 +901,9 @@ export default function ProfilePage() {
         {/* Profile Details */}
         <Card title="Profile Details">
           <div className="flex flex-col gap-4">
+            <ReadField label="Name"    value={fullName} />
             <ReadField label="Email"   value={email} />
+            <ReadField label="Account" value={accountDisplay} />
 
             {creditBal !== null && (
               <div className="flex flex-col gap-1">
