@@ -644,6 +644,7 @@ select.calc-input {
   box-shadow: 0 0 0 2px #3b82f6;
   border-color: #3b82f6;
 }
+.stripe-card-single { min-height: 44px; }
 
 /* ── Cost Limit modal ─────────────────────────────────────────────────────── */
 .cost-limit-modal-card {
