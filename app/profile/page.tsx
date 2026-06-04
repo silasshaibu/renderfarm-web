@@ -108,38 +108,37 @@ function EditableField({
     finally { setSaving(false) }
   }
 
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">{label}</span>
-        {!editing && (
-          <button type="button" onClick={begin}
-            className="text-xs text-blue-400 hover:text-blue-300 transition-colors">Edit</button>
-        )}
+  if (editing) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-gray-500 w-20 shrink-0">{label}</span>
+        <input
+          type="text"
+          value={draft}
+          placeholder={placeholder}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel() }}
+          autoFocus
+          className="flex-1 text-sm text-gray-100 py-1 px-2 rounded bg-white/5 border border-blue-500/50 outline-none focus:border-blue-500"
+        />
+        <button type="button" onClick={save} disabled={saving || !draft.trim()}
+          className="text-xs font-medium px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white transition-colors">
+          {saving ? '…' : 'Save'}
+        </button>
+        <button type="button" onClick={cancel}
+          className="text-xs px-1 py-1 rounded text-gray-400 hover:text-gray-200 transition-colors">Cancel</button>
       </div>
-      {editing ? (
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={draft}
-            placeholder={placeholder}
-            onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel() }}
-            autoFocus
-            className="flex-1 text-sm text-gray-100 py-2 px-3 rounded bg-white/5 border border-blue-500/50 outline-none focus:border-blue-500"
-          />
-          <button type="button" onClick={save} disabled={saving || !draft.trim()}
-            className="text-xs font-medium px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white transition-colors">
-            {saving ? '…' : 'Save'}
-          </button>
-          <button type="button" onClick={cancel}
-            className="text-xs px-2 py-2 rounded text-gray-400 hover:text-gray-200 transition-colors">Cancel</button>
-        </div>
-      ) : (
-        <span className="text-sm text-gray-200 py-2 px-3 rounded bg-white/5 border border-white/10 min-h-[38px] flex items-center">
-          {value || <span className="text-gray-600 italic">—</span>}
-        </span>
-      )}
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 group">
+      <span className="text-sm text-gray-500 w-20 shrink-0">{label}</span>
+      <span className="text-sm text-gray-200">{value || <span className="text-gray-600 italic">—</span>}</span>
+      <button type="button" onClick={begin}
+        className="text-xs text-blue-400 hover:text-blue-300 transition-colors opacity-0 group-hover:opacity-100 ml-1">
+        Edit
+      </button>
     </div>
   )
 }
@@ -974,27 +973,28 @@ export default function ProfilePage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Profile Details */}
         <Card title="Profile Details">
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             <EditableField label="Name"    value={fullName}       placeholder="Your full name" onSave={saveName} />
-            <ReadField     label="Email"   value={email} />
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 w-20 shrink-0">Email</span>
+              <span className="text-sm text-gray-200">{email || <span className="text-gray-600 italic">—</span>}</span>
+            </div>
             <EditableField label="Account" value={accountDisplay} placeholder="Account name"   onSave={saveAccount} />
 
             {creditBal !== null && (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">Credit Balance</span>
-                <div className="flex items-center gap-3 py-2 px-3 rounded bg-white/5 border border-white/10">
-                  <span className={`text-sm font-mono font-semibold ${creditBal > 10 ? 'text-white' : creditBal >= 5 ? 'text-amber-400' : 'text-red-400'}`}>
-                    ${creditBal.toFixed(2)}
-                  </span>
-                  <button type="button" onClick={() => setShowCredits(true)}
-                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors ml-auto">
-                    View Credit History
-                  </button>
-                </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500 w-20 shrink-0">Credit</span>
+                <span className={`text-sm font-mono font-semibold ${creditBal > 10 ? 'text-white' : creditBal >= 5 ? 'text-amber-400' : 'text-red-400'}`}>
+                  ${creditBal.toFixed(2)}
+                </span>
+                <button type="button" onClick={() => setShowCredits(true)}
+                  className="text-xs text-blue-400 hover:text-blue-300 transition-colors ml-auto">
+                  View Credit History
+                </button>
               </div>
             )}
 
-            <div className="pt-2 border-t border-white/5">
+            <div className="pt-3 mt-1 border-t border-white/5">
               {resetSent && (
                 <p className="text-green-400 text-xs mb-2">✓ Password reset email sent to {email}</p>
               )}
