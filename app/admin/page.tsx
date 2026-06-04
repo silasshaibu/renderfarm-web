@@ -2131,6 +2131,8 @@ const TABS = [
 ] as const
 type TabId = (typeof TABS)[number]['id']
 
+const SUPER_ADMIN_ONLY = new Set<TabId>(['overview', 'storage'])
+
 export default function AdminPage() {
   const router = useRouter()
   const [active,       setActive]       = useState<TabId>('overview')
@@ -2162,8 +2164,8 @@ export default function AdminPage() {
     const p = new URLSearchParams(window.location.search)
     const t = p.get('tab') as TabId | null
     if (t && TABS.some(x => x.id === t)) {
-      // Block direct URL access to overview for non-super-admins
-      if (t === 'overview' && !isSuperAdmin) return
+      // Block direct URL access to super-admin-only tabs
+      if (SUPER_ADMIN_ONLY.has(t) && !isSuperAdmin) return
       setActive(t)
     }
   }, [isSuperAdmin])
@@ -2179,7 +2181,7 @@ export default function AdminPage() {
 
   if (!authChecked) return null
 
-  const visibleTabs = isSuperAdmin ? TABS : TABS.filter(t => t.id !== 'overview')
+  const visibleTabs = isSuperAdmin ? TABS : TABS.filter(t => !SUPER_ADMIN_ONLY.has(t.id))
   const { Panel } = TABS.find(t => t.id === active)!
 
   return (

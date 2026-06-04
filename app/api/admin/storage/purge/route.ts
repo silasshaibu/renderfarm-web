@@ -14,7 +14,7 @@ async function ensureSettingsTable() {
 // ── POST /api/admin/storage/purge — initiate purge ───────────────────────────
 export async function POST(req: NextRequest) {
   const user = await verifyToken(req)
-  if (!user || !user.isAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
+  if (!user || !user.isSuperAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 
   await initDB()
   await ensureSettingsTable()
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 // ── GET /api/admin/storage/purge — check purge status ────────────────────────
 export async function GET(req: NextRequest) {
   const user = await verifyToken(req)
-  if (!user || !user.isAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
+  if (!user || !user.isSuperAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 
   await initDB()
   await ensureSettingsTable()

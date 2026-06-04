@@ -8,7 +8,7 @@ import { sql, initDB } from '@/lib/db'
 // Returns asset storage summary from the assets table
 export async function GET(req: NextRequest) {
   const user = await verifyToken(req)
-  if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
+  if (!user?.isSuperAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 
   await initDB()
 
