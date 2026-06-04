@@ -25,11 +25,11 @@ export interface EmailOptions {
  * Send a transactional email.
  * Never throws — email failures are logged but must not break the main request.
  */
-export async function sendEmail(opts: EmailOptions): Promise<void> {
+export async function sendEmail(opts: EmailOptions): Promise<boolean> {
   const key = getKey()
   if (!key) {
     console.warn('[email] RESEND_API_KEY not set — email skipped:', opts.subject)
-    return
+    return false
   }
 
   try {
@@ -51,9 +51,12 @@ export async function sendEmail(opts: EmailOptions): Promise<void> {
     if (!res.ok) {
       const body = await res.text().catch(() => '')
       console.error('[email] Resend error:', res.status, body)
+      return false
     }
+    return true
   } catch (err) {
     console.error('[email] Network error sending email:', err)
+    return false
   }
 }
 

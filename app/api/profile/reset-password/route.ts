@@ -33,11 +33,18 @@ export async function POST(req: NextRequest) {
   `
 
   const resetUrl = `${baseUrl()}/reset-password?token=${encodeURIComponent(token)}`
-  await sendEmail({
+  const emailed = await sendEmail({
     to:      user.email,
     subject: 'Reset your Renderfarm password',
     html:    passwordResetEmail(resetUrl),
   })
+
+  if (!emailed) {
+    return NextResponse.json(
+      { ok: false, message: 'Email service is not configured. Contact your administrator.' },
+      { status: 500 }
+    )
+  }
 
   return NextResponse.json({ ok: true })
 }
