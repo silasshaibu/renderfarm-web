@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth-server'
+import { detachCard, setDefaultCard } from '@/lib/payments'
 
-
-
-// ── DELETE /api/payments/cards/[id] ──────────────────────────────────────────
 export async function DELETE(
   req: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -11,14 +9,16 @@ export async function DELETE(
   const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
-  // TODO: detach payment method via Stripe API
-  return NextResponse.json({ message: 'Payment processor not configured' }, { status: 503 })
+  const { id } = await context.params
+  try {
+    await detachCard(user.sub, id)
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    console.error('[payments/cards] DELETE error:', e)
+    return NextResponse.json({ message: String(e) }, { status: 500 })
+  }
 }
 
-// ── PATCH /api/payments/cards/[id]/default ────────────────────────────────────
-// This is actually called on /api/payments/cards/[id]/default but that sub-path
-// also resolves here when the segment is the card id followed by /default.
-// If the URL ends with /default, set it as default; otherwise 404.
 export async function PATCH(
   req: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -26,6 +26,12 @@ export async function PATCH(
   const user = await verifyToken(req)
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
 
-  // TODO: set default payment method via Stripe API
-  return NextResponse.json({ message: 'Payment processor not configured' }, { status: 503 })
+  const { id } = await context.params
+  try {
+    await setDefaultCard(user.sub, id)
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    console.error('[payments/cards] PATCH error:', e)
+    return NextResponse.json({ message: String(e) }, { status: 500 })
+  }
 }
