@@ -14,6 +14,47 @@ function getKey()  { return process.env.RESEND_API_KEY  ?? '' }
 function getFrom() { return process.env.RESEND_FROM     ?? 'Renderfarm <noreply@renderfarm-web.vercel.app>' }
 export  function baseUrl() { return process.env.NEXT_PUBLIC_BASE_URL ?? 'https://renderfarm-web.vercel.app' }
 
+/**
+ * Diagnostic — sends a test email and returns the raw Resend response.
+ * Used by the email-test debug endpoint. Never used in normal flows.
+ */
+export async function sendEmailDiagnostic(to: string): Promise<{
+  configured: boolean
+  from: string
+  status: number | null
+  resendBody: string
+  hint: string
+}> {
+  const key = getKey()
+  const from = getFrom()
+  if (!key) {
+    return { configured: false, from, status: null, resendBody: '', hint: 'RESEND_API_KEY is not set in Vercel.' }
+  }
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        subject: 'Renderfarm email test',
+        html: '<p>This is a test email from your Renderfarm dashboard. If you received it, email is working. ✅</p>',
+      }),
+    })
+    const body = await res.text().catch(() => '')
+    let hint = ''
+    if (res.ok) hint = 'Success — check your inbox (and spam folder).'
+    else if (res.status === 403 && body.includes('domain')) hint = 'Sending domain not verified in Resend. Verify your domain or set RESEND_FROM to onboarding@resend.dev for testing.'
+    else if (res.status === 401) hint = 'RESEND_API_KEY is invalid.'
+    else if (res.status === 422) hint = 'Resend rejected the request — likely the "from" address is not a verified domain.'
+    else hint = `Resend returned ${res.status}.`
+    return { configured: true, from, status: res.status, resendBody: body, hint }
+  } catch (e) {
+    return { configured: true, from, status: null, resendBody: String(e), hint: 'Network error reaching Resend.' }
+  }
+}
+
 export interface EmailOptions {
   to:      string | string[]
   subject: string
