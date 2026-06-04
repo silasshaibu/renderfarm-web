@@ -26,7 +26,6 @@ export async function initDB() {
   await sql`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT FALSE
   `
-  `
 
   await sql`
     CREATE TABLE IF NOT EXISTS jobs (
