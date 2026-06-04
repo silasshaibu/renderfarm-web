@@ -14,43 +14,54 @@ export async function GET(req: NextRequest) {
 
   const startDate = start.toISOString().slice(0, 10)
   const endDate   = end.toISOString().slice(0, 10)
+  const userId    = Number(user.sub)
 
   // Amount spent on render jobs this period
   const jobRows = await sql`
     SELECT COALESCE(SUM(cost_usd), 0) AS total
     FROM jobs
-    WHERE user_id = ${user.sub}
+    WHERE user_id = ${userId}
       AND status IN ('success', 'downloaded', 'done')
       AND updated_at >= ${start.toISOString()}
       AND updated_at <= ${end.toISOString()}
   ` as Record<string, unknown>[]
   const amountSpent = Number(jobRows[0]?.total ?? 0)
 
-  // Credits purchased this period (prepay + admin grants)
+  // Credits added this period — from credits table (all positive entries)
   const creditRows = await sql`
     SELECT COALESCE(SUM(amount), 0) AS total
     FROM credits
-    WHERE user_id = ${user.sub}
-      AND type IN ('purchased', 'admin_grant', 'welcome_bonus')
+    WHERE user_id = ${userId}
+      AND amount > 0
       AND created_at >= ${start.toISOString()}
       AND created_at <= ${end.toISOString()}
   ` as Record<string, unknown>[]
   const additionalCredits = Number(creditRows[0]?.total ?? 0)
 
-  // Amount charged to card this period (settled transactions)
+  // Amount charged to card — from payment_transactions (legacy) + transactions (new)
+  const ptRows = await sql`
+    SELECT COALESCE(SUM(amount), 0) AS total
+    FROM payment_transactions
+    WHERE user_id = ${String(userId)}
+      AND status = 'settled'
+      AND date >= ${start.toISOString()}
+      AND date <= ${end.toISOString()}
+  `.catch(() => [{ total: 0 }]) as Record<string, unknown>[]
+
   const txRows = await sql`
     SELECT COALESCE(SUM(amount), 0) AS total
     FROM transactions
-    WHERE user_id = ${user.sub}
+    WHERE user_id = ${userId}
       AND status = 'settled'
       AND created_at >= ${start.toISOString()}
       AND created_at <= ${end.toISOString()}
-  ` as Record<string, unknown>[]
-  const amountCharged = Number(txRows[0]?.total ?? 0)
+  `.catch(() => [{ total: 0 }]) as Record<string, unknown>[]
 
-  // Overall balance (positive = credit remaining, negative = owes money)
+  const amountCharged = Number(ptRows[0]?.total ?? 0) + Number(txRows[0]?.total ?? 0)
+
+  // Overall balance
   const balanceRows = await sql`
-    SELECT COALESCE(SUM(amount), 0) AS balance FROM credits WHERE user_id = ${user.sub}
+    SELECT COALESCE(SUM(amount), 0) AS balance FROM credits WHERE user_id = ${userId}
   ` as Record<string, unknown>[]
   const balance = Number(balanceRows[0]?.balance ?? 0)
   const outstandingBalance = balance < 0 ? Math.abs(balance) : 0
@@ -59,9 +70,9 @@ export async function GET(req: NextRequest) {
     startDate,
     endDate,
     carryOver: 0,
-    amountSpent: Math.round(amountSpent * 100) / 100,
-    amountCharged: Math.round(amountCharged * 100) / 100,
-    additionalCredits: Math.round(additionalCredits * 100) / 100,
+    amountSpent:        Math.round(amountSpent * 100)        / 100,
+    amountCharged:      Math.round(amountCharged * 100)      / 100,
+    additionalCredits:  Math.round(additionalCredits * 100)  / 100,
     outstandingBalance: Math.round(outstandingBalance * 100) / 100,
   })
 }
