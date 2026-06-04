@@ -12,6 +12,8 @@ import {
   AdminUser,
 } from '@/lib/api'
 import { useApiFetch } from '@/hooks/useApiFetch'
+import { loadStripe } from '@stripe/stripe-js'
+import { Elements, CardNumberElement, CardExpiryElement, CardCvcElement, useStripe, useElements } from '@stripe/react-stripe-js'
 
 const CostLimitChart = dynamic(() => import('@/components/CostLimitChart'), { ssr: false })
 
@@ -1699,6 +1701,116 @@ function StorageTab() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Stripe Add Card Modal
+// ─────────────────────────────────────────────────────────────────────────────
+const stripeElementStyle = {
+  base: {
+    color: '#e2e8f0',
+    fontFamily: 'ui-monospace, monospace',
+    fontSize: '14px',
+    '::placeholder': { color: '#4b5563' },
+  },
+  invalid: { color: '#f87171' },
+}
+
+function StripeCardForm({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const stripe = useStripe()
+  const elements = useElements()
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async () => {
+    if (!stripe || !elements) return
+    setSaving(true)
+    setError('')
+    try {
+      // Get setup intent client secret from backend
+      const res = await fetch('/api/payments/cards', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('rf_token') ?? ''}` },
+      })
+      const { clientSecret } = await res.json() as { clientSecret: string }
+
+      const cardNumber = elements.getElement(CardNumberElement)
+      if (!cardNumber) throw new Error('Card element not found')
+
+      const result = await stripe.confirmCardSetup(clientSecret, {
+        payment_method: { card: cardNumber },
+      })
+
+      if (result.error) throw new Error(result.error.message)
+      onSuccess()
+      onClose()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4 px-5 py-5">
+      {error && <p className="text-red-400 text-sm">{error}</p>}
+
+      <div>
+        <label className="payment-field-label">Card Number</label>
+        <div className="payment-field-input">
+          <CardNumberElement options={{ style: stripeElementStyle, showIcon: true }} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="payment-field-label">Expiration Date</label>
+          <div className="payment-field-input">
+            <CardExpiryElement options={{ style: stripeElementStyle }} />
+          </div>
+        </div>
+        <div>
+          <label className="payment-field-label">CVV</label>
+          <div className="payment-field-input">
+            <CardCvcElement options={{ style: stripeElementStyle }} />
+          </div>
+        </div>
+      </div>
+
+      <p className="text-xs text-gray-500 flex items-center gap-1">
+        🔒 Secured by Stripe — we never see your card details
+      </p>
+
+      <hr className="payment-modal-divider" />
+      <div className="flex items-center gap-3 justify-end">
+        <button type="button" className="payment-confirm-btn" onClick={handleSubmit} disabled={saving || !stripe}>
+          {saving ? 'Saving…' : 'Save Card'}
+        </button>
+        <button type="button" className="payment-cancel-btn" onClick={onClose}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+function StripeAddCardModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [stripePromise] = useState(() =>
+    fetch('/api/payments/stripe-key')
+      .then(r => r.json())
+      .then((d: { publishableKey: string }) => loadStripe(d.publishableKey))
+  )
+
+  return (
+    <div className="enterprise-modal-overlay" onClick={onClose}>
+      <div className="payment-modal-card" onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true" aria-labelledby="addcard-title">
+        <h2 id="addcard-title" className="payment-modal-title">Add Credit Card</h2>
+        <hr className="payment-modal-divider" />
+        <Elements stripe={stripePromise}>
+          <StripeCardForm onClose={onClose} onSuccess={onSuccess} />
+        </Elements>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TAB 6: PAYMENT INFORMATION
 // ─────────────────────────────────────────────────────────────────────────────
 const PREPAY_OPTIONS = [
@@ -1862,45 +1974,12 @@ ${rows.map(t => `<tr>
         </div>
       )}
 
-      {/* Add Card Modal */}
+      {/* Add Card Modal — Stripe Elements */}
       {showAddCard && (
-        <div className="enterprise-modal-overlay" onClick={() => setShowAddCard(false)}>
-          <div className="payment-modal-card" onClick={e => e.stopPropagation()}
-            role="dialog" aria-modal="true" aria-labelledby="addcard-title">
-            <h2 id="addcard-title" className="payment-modal-title">Add Credit Card</h2>
-            <hr className="payment-modal-divider" />
-            <div className="flex flex-col gap-4 px-5 py-5">
-              {[
-                { id: 'cc-number', label: 'Card Number', ph: '4111 1111 1111 1111', val: cardNum, set: setCardNum, max: 19 },
-                { id: 'cc-expiry', label: 'Expiration Date', ph: 'MM/YY', val: expiry, set: setExpiry, max: 5 },
-                { id: 'cc-cvv',    label: 'CVV', ph: '123', val: cvv, set: setCvv, max: 4 },
-                { id: 'cc-postal', label: 'Postal or Country Code', ph: '11111', val: postal, set: setPostal, max: 10 },
-              ].map(f => (
-                <div key={f.id}>
-                  <label className="payment-field-label" htmlFor={f.id}>{f.label}</label>
-                  <input id={f.id} type="text" placeholder={f.ph} maxLength={f.max}
-                    value={f.val} onChange={e => f.set(e.target.value)}
-                    className="payment-field-input" />
-                </div>
-              ))}
-            </div>
-            <hr className="payment-modal-divider" />
-            <div className="flex items-center gap-3 px-5 py-4 justify-end">
-              <button type="button" className="payment-confirm-btn" onClick={async () => {
-                if (cardNum) {
-                  try {
-                    await paymentsApi.addCard({ brand: 'Card', number: cardNum, exp: expiry })
-                    toast.success('Card added.')
-                    await refetchCards()
-                    setCardNum(''); setExpiry(''); setCvv(''); setPostal('')
-                  } catch { toast.error('Failed to add card.') }
-                }
-                setShowAddCard(false)
-              }}>Ok</button>
-              <button type="button" className="payment-cancel-btn" onClick={() => setShowAddCard(false)}>Cancel</button>
-            </div>
-          </div>
-        </div>
+        <StripeAddCardModal
+          onClose={() => setShowAddCard(false)}
+          onSuccess={async () => { toast.success('Card saved.'); await refetchCards() }}
+        />
       )}
 
       {/* Receipt Modal */}
