@@ -98,6 +98,22 @@ export default function StripeAddCardModal({
       })
 
       if (result.error) throw new Error(result.error.message)
+
+      // Immediately save card to DB (don't wait for webhook)
+      const pmId = typeof result.setupIntent?.payment_method === 'string'
+        ? result.setupIntent.payment_method
+        : null
+      if (pmId) {
+        await fetch('/api/payments/cards/save', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ paymentMethodId: pmId }),
+        })
+      }
+
       onSuccess()
       onClose()
     } catch (e) {
