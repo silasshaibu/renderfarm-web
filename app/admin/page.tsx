@@ -1789,13 +1789,10 @@ function StripeCardForm({ onClose, onSuccess }: { onClose: () => void; onSuccess
   )
 }
 
-function StripeAddCardModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [stripePromise] = useState(() =>
-    fetch('/api/payments/stripe-key')
-      .then(r => r.json())
-      .then((d: { publishableKey: string }) => loadStripe(d.publishableKey))
-  )
+// Initialize Stripe once at module level — publishable key is public, safe to expose
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '')
 
+function StripeAddCardModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   return (
     <div className="enterprise-modal-overlay" onClick={onClose}>
       <div className="payment-modal-card" onClick={e => e.stopPropagation()}
