@@ -27,16 +27,27 @@ export async function GET(req: NextRequest) {
   ` as Record<string, unknown>[]
   const amountSpent = Number(jobRows[0]?.total ?? 0)
 
-  // Credits added this period — from credits table (all positive entries)
-  const creditRows = await sql`
-    SELECT COALESCE(SUM(amount), 0) AS total
-    FROM credits
+  // Additional Credits = bonus portion of purchases this period (Conductor semantic)
+  // $100 tier = $0 bonus, $500 = +$50, $1000 = +$150
+  const ptBonus = await sql`
+    SELECT COALESCE(SUM(bonus_credit), 0) AS total
+    FROM payment_transactions
+    WHERE user_id = ${String(userId)}
+      AND status = 'settled'
+      AND date >= ${start.toISOString()}
+      AND date <= ${end.toISOString()}
+  `.catch(() => [{ total: 0 }]) as Record<string, unknown>[]
+
+  const txBonus = await sql`
+    SELECT COALESCE(SUM(bonus_credit), 0) AS total
+    FROM transactions
     WHERE user_id = ${userId}
-      AND amount > 0
+      AND status = 'settled'
       AND created_at >= ${start.toISOString()}
       AND created_at <= ${end.toISOString()}
-  ` as Record<string, unknown>[]
-  const additionalCredits = Number(creditRows[0]?.total ?? 0)
+  `.catch(() => [{ total: 0 }]) as Record<string, unknown>[]
+
+  const additionalCredits = Number(ptBonus[0]?.total ?? 0) + Number(txBonus[0]?.total ?? 0)
 
   // Amount charged to card — from payment_transactions (legacy) + transactions (new)
   const ptRows = await sql`
