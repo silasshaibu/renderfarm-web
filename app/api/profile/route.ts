@@ -56,23 +56,26 @@ export async function PATCH(req: NextRequest) {
   await initDB()
 
   const body = await req.json() as {
-    firstName?: string
-    lastName?:  string
-    phone?:     string
-    company?:   string
-    country?:   string
+    firstName?:   string
+    lastName?:    string
+    accountName?: string
+    phone?:       string
+    company?:     string
+    country?:     string
   }
 
   const firstName = body.firstName?.trim() ?? ''
   const lastName  = body.lastName?.trim()  ?? ''
   const fullName  = [firstName, lastName].filter(Boolean).join(' ')
+  const acctName  = body.accountName?.trim() ?? ''
 
   await sql`
     UPDATE users
-    SET name    = CASE WHEN ${fullName} <> '' THEN ${fullName} ELSE name END,
-        phone   = COALESCE(${body.phone   ?? null}, phone),
-        company = COALESCE(${body.company ?? null}, company),
-        country = COALESCE(${body.country ?? null}, country)
+    SET name         = CASE WHEN ${fullName} <> '' THEN ${fullName} ELSE name END,
+        account_name = CASE WHEN ${acctName} <> '' THEN ${acctName} ELSE account_name END,
+        phone        = COALESCE(${body.phone   ?? null}, phone),
+        company      = COALESCE(${body.company ?? null}, company),
+        country      = COALESCE(${body.country ?? null}, country)
     WHERE id = ${user.sub}
   `
 

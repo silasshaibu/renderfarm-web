@@ -85,6 +85,66 @@ function ReadField({ label, value }: { label: string; value: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Editable field — click Edit to reveal an input, Save persists via callback
+// ---------------------------------------------------------------------------
+function EditableField({
+  label, value, placeholder, onSave,
+}: {
+  label: string
+  value: string
+  placeholder?: string
+  onSave: (next: string) => Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft,   setDraft]   = useState(value)
+  const [saving,  setSaving]  = useState(false)
+
+  const begin = () => { setDraft(value === '—' ? '' : value); setEditing(true) }
+  const cancel = () => { setEditing(false) }
+  const save = async () => {
+    if (!draft.trim()) return
+    setSaving(true)
+    try { await onSave(draft.trim()); setEditing(false) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">{label}</span>
+        {!editing && (
+          <button type="button" onClick={begin}
+            className="text-xs text-blue-400 hover:text-blue-300 transition-colors">Edit</button>
+        )}
+      </div>
+      {editing ? (
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={draft}
+            placeholder={placeholder}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel() }}
+            autoFocus
+            className="flex-1 text-sm text-gray-100 py-2 px-3 rounded bg-white/5 border border-blue-500/50 outline-none focus:border-blue-500"
+          />
+          <button type="button" onClick={save} disabled={saving || !draft.trim()}
+            className="text-xs font-medium px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white transition-colors">
+            {saving ? '…' : 'Save'}
+          </button>
+          <button type="button" onClick={cancel}
+            className="text-xs px-2 py-2 rounded text-gray-400 hover:text-gray-200 transition-colors">Cancel</button>
+        </div>
+      ) : (
+        <span className="text-sm text-gray-200 py-2 px-3 rounded bg-white/5 border border-white/10 min-h-[38px] flex items-center">
+          {value || <span className="text-gray-600 italic">—</span>}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // API Key modal
 // ---------------------------------------------------------------------------
 function ApiKeyModal({ onClose }: { onClose: () => void }) {
@@ -851,6 +911,20 @@ export default function ProfilePage() {
 
   useEffect(() => { load() }, [load])
 
+  // Save handlers for editable Name / Account
+  const saveName = async (next: string) => {
+    const parts = next.trim().split(/\s+/)
+    const fn = parts[0] ?? ''
+    const ln = parts.slice(1).join(' ')
+    await apiFetch('/api/profile', 'PATCH', { firstName: fn, lastName: ln })
+    setFirstName(fn); setLastName(ln)
+  }
+
+  const saveAccount = async (next: string) => {
+    await apiFetch('/api/profile', 'PATCH', { accountName: next })
+    setAccountName(next)
+  }
+
   // Decode JWT to check super-admin status
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -901,9 +975,9 @@ export default function ProfilePage() {
         {/* Profile Details */}
         <Card title="Profile Details">
           <div className="flex flex-col gap-4">
-            <ReadField label="Name"    value={fullName} />
-            <ReadField label="Email"   value={email} />
-            <ReadField label="Account" value={accountDisplay} />
+            <EditableField label="Name"    value={fullName}       placeholder="Your full name" onSave={saveName} />
+            <ReadField     label="Email"   value={email} />
+            <EditableField label="Account" value={accountDisplay} placeholder="Account name"   onSave={saveAccount} />
 
             {creditBal !== null && (
               <div className="flex flex-col gap-1">
