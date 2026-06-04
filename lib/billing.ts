@@ -108,17 +108,26 @@ export async function listSavedCards(userId: number) {
   ` as Record<string, unknown>[]
 
   const now = new Date()
-  return rows.map(r => ({
-    id: Number(r.id),
-    stripePmId: String(r.stripe_pm_id),
-    brand: String(r.brand ?? 'card'),
-    last4: String(r.last4 ?? '****'),
-    expMonth: Number(r.exp_month),
-    expYear: Number(r.exp_year),
-    isDefault: Boolean(r.is_default),
-    isExpired: new Date(Number(r.exp_year), Number(r.exp_month) - 1) < now,
-    formatted: `xxxx-xxxx-xxxx-${r.last4}`,
-  }))
+  return rows.map(r => {
+    const expMonth = Number(r.exp_month)
+    const expYear  = Number(r.exp_year)
+    const isExpired = new Date(expYear, expMonth - 1) < now
+    return {
+      id: String(r.id),
+      stripePmId: String(r.stripe_pm_id),
+      brand: String(r.brand ?? 'card'),
+      last4: String(r.last4 ?? '****'),
+      expMonth,
+      expYear,
+      isDefault: Boolean(r.is_default),
+      isExpired,
+      // Fields matching ApiCard shape expected by PaymentTab
+      number: `xxxx-xxxx-xxxx-${r.last4}`,
+      exp: isExpired
+        ? `${expMonth}/${expYear} — Expired`
+        : `${expMonth}/${expYear}`,
+    }
+  })
 }
 
 /** Remove a saved card */
@@ -408,15 +417,20 @@ export async function getUserTransactions(userId: number, limit = 100) {
   ` as Record<string, unknown>[]
 
   return rows.map(r => ({
-    id: Number(r.id),
-    amount: Number(r.amount),
+    id: String(r.id),
+    date: String(r.created_at),
+    description: r.type === 'render'
+      ? `Monthly billing`
+      : r.type === 'sale'
+      ? `Prepay purchase`
+      : String(r.type ?? ''),
+    cardType: 'Card',
+    cardNumber: r.card_last4 ? `xxxx-xxxx-xxxx-${r.card_last4}` : '—',
     type: String(r.type ?? 'sale'),
     status: String(r.status ?? 'settled'),
-    stripePaymentId: r.stripe_payment_id ? String(r.stripe_payment_id) : null,
-    cardNumber: r.card_last4 ? `xxxx-xxxx-xxxx-${r.card_last4}` : '—',
     bonusCredit: Number(r.bonus_credit ?? 0),
-    errorMessage: r.error_message ? String(r.error_message) : null,
-    createdAt: String(r.created_at),
+    amount: Number(r.amount),
+    authCode: r.stripe_payment_id ? String(r.stripe_payment_id) : null,
   }))
 }
 
