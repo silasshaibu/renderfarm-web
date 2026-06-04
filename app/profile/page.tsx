@@ -866,7 +866,7 @@ export default function ProfilePage() {
   }
 
   if (loading) return (
-    <div className="flex flex-col gap-6 max-w-4xl">
+    <div className="flex flex-col gap-6 max-w-6xl">
       <h1 className="text-2xl font-semibold text-white tracking-tight">User Profile</h1>
       <p className="text-gray-500 text-sm py-10 text-center">Loading…</p>
     </div>
@@ -875,7 +875,7 @@ export default function ProfilePage() {
   const fullName = [firstName, lastName].filter(Boolean).join(' ') || '—'
 
   return (
-    <div className="flex flex-col gap-6 max-w-4xl">
+    <div className="flex flex-col gap-6 max-w-6xl">
       <h1 className="text-2xl font-semibold text-white tracking-tight">User Profile</h1>
 
       {error && (
