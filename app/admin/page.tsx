@@ -1792,8 +1792,10 @@ function StripeCardForm({ onClose, onSuccess }: { onClose: () => void; onSuccess
   )
 }
 
-// Initialize Stripe once at module level — publishable key is public, safe to expose
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '')
+// Initialize Stripe once at module level — null if key not configured
+const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+  : null
 
 function StripeAddCardModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   return (
@@ -1802,9 +1804,18 @@ function StripeAddCardModal({ onClose, onSuccess }: { onClose: () => void; onSuc
         role="dialog" aria-modal="true" aria-labelledby="addcard-title">
         <h2 id="addcard-title" className="payment-modal-title">Add Credit Card</h2>
         <hr className="payment-modal-divider" />
-        <Elements stripe={stripePromise}>
-          <StripeCardForm onClose={onClose} onSuccess={onSuccess} />
-        </Elements>
+        {stripePromise ? (
+          <Elements stripe={stripePromise}>
+            <StripeCardForm onClose={onClose} onSuccess={onSuccess} />
+          </Elements>
+        ) : (
+          <div className="flex flex-col gap-4 px-5 py-5">
+            <p className="text-amber-400 text-sm">Payment not configured. Add <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code> to Vercel environment variables.</p>
+            <div className="flex justify-end">
+              <button type="button" className="payment-cancel-btn" onClick={onClose}>Close</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
