@@ -178,6 +178,22 @@ select.calc-input {
   background-position: right 0.6rem center;
   padding-right: 2rem;
 }
+/* dropdown option list — dark background so light text is readable */
+.calc-input option {
+  background-color: #1e1e1e;
+  color: #e5e7eb;
+}
+.calc-input option:checked,
+.calc-input option:hover {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+/* global fallback — keep all native select dropdowns readable on dark theme */
+select option {
+  background-color: #1e1e1e;
+  color: #e5e7eb;
+}
 
 .calc-estimate-btn {
   background: #2563eb;
