@@ -5,7 +5,7 @@ import { ensureCreditSchema } from '@/lib/credits'
 
 export async function GET(req: NextRequest) {
   const admin = await verifyToken(req)
-  if (!admin || !admin.isAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
+  if (!admin || !admin.isSuperAdmin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 
   await initDB()
   await ensureCreditSchema().catch(() => null)

@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
 
     // JWT is long-lived — DB session is the expiry authority
     const access_token = jwt.sign(
-      { sub: String(user.id), email: user.email, isAdmin: user.is_admin, jti },
+      { sub: String(user.id), email: user.email, isAdmin: user.is_admin, isSuperAdmin: Boolean(user.is_super_admin), jti },
       JWT_SECRET,
       { expiresIn: '90d' },
     )

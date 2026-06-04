@@ -2135,6 +2135,7 @@ export default function AdminPage() {
   const router = useRouter()
   const [active,       setActive]       = useState<TabId>('overview')
   const [authChecked,  setAuthChecked]  = useState(false)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
 
   // Admin guard — decode JWT client-side
   useEffect(() => {
@@ -2144,6 +2145,10 @@ export default function AdminPage() {
     try {
       const payload = JSON.parse(atob(token.split('.')[1]))
       if (!payload.isAdmin) { router.replace('/jobs'); return }
+      const superAdmin = Boolean(payload.isSuperAdmin)
+      setIsSuperAdmin(superAdmin)
+      // Non-super-admins land on Users tab
+      if (!superAdmin) setActive('users')
     } catch {
       router.replace('/')
       return
@@ -2156,8 +2161,12 @@ export default function AdminPage() {
     if (typeof window === 'undefined') return
     const p = new URLSearchParams(window.location.search)
     const t = p.get('tab') as TabId | null
-    if (t && TABS.some(x => x.id === t)) setActive(t)
-  }, [])
+    if (t && TABS.some(x => x.id === t)) {
+      // Block direct URL access to overview for non-super-admins
+      if (t === 'overview' && !isSuperAdmin) return
+      setActive(t)
+    }
+  }, [isSuperAdmin])
 
   const changeTab = (id: TabId) => {
     setActive(id)
@@ -2170,6 +2179,7 @@ export default function AdminPage() {
 
   if (!authChecked) return null
 
+  const visibleTabs = isSuperAdmin ? TABS : TABS.filter(t => t.id !== 'overview')
   const { Panel } = TABS.find(t => t.id === active)!
 
   return (
@@ -2177,7 +2187,7 @@ export default function AdminPage() {
       <div className="flex flex-col gap-4">
         <div><h1 className="text-2xl font-semibold text-white tracking-tight">Admin</h1></div>
         <div className="admin-tabbar">
-          {TABS.map(tab => (
+          {visibleTabs.map(tab => (
             <button key={tab.id} type="button" onClick={() => changeTab(tab.id)}
               className={['admin-tab', active === tab.id ? 'admin-tab--active' : ''].join(' ')}>
               {tab.label}

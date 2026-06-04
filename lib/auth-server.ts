@@ -21,10 +21,11 @@ export const SESSION_TTL_MS  = 24 * 60 * 60 * 1000   // 24 hours
 export const RENEW_WITHIN_MS = 12 * 60 * 60 * 1000   // renew when <12 h left
 
 export interface TokenPayload {
-  sub:     string
-  email:   string
-  isAdmin: boolean
-  jti?:    string
+  sub:          string
+  email:        string
+  isAdmin:      boolean
+  isSuperAdmin: boolean
+  jti?:         string
 }
 
 /**

@@ -14,12 +14,18 @@ export async function initDB() {
 
   await sql`
     CREATE TABLE IF NOT EXISTS users (
-      id          SERIAL PRIMARY KEY,
-      email       TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      is_admin    BOOLEAN DEFAULT FALSE,
-      created_at  TIMESTAMP DEFAULT NOW()
-    )
+      id             SERIAL PRIMARY KEY,
+      email          TEXT UNIQUE NOT NULL,
+      password_hash  TEXT NOT NULL,
+      is_admin       BOOLEAN DEFAULT FALSE,
+      is_super_admin BOOLEAN DEFAULT FALSE,
+      created_at     TIMESTAMP DEFAULT NOW()
+    )`
+
+  // Migrate: add is_super_admin if it doesn't exist yet
+  await sql`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT FALSE
+  `
   `
 
   await sql`
