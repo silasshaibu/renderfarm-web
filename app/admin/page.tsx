@@ -1832,32 +1832,40 @@ ${rows.map(t => `<tr>
 
       {/* Confirm Payment Modal */}
       {showConfirm && (
-        <div className="enterprise-modal-overlay" onClick={() => setShowConfirm(false)}>
+        <div className="enterprise-modal-overlay" onClick={() => { if (!purchasing) setShowConfirm(false) }}>
           <div className="payment-modal-card" onClick={e => e.stopPropagation()}
             role="dialog" aria-modal="true" aria-labelledby="confirm-title">
             <h2 id="confirm-title" className="payment-modal-title">Confirm Payment</h2>
             <hr className="payment-modal-divider" />
-            <p className="text-sm text-gray-300 px-5 py-4">
-              Your card will be charged{' '}
-              <strong className="text-white">${selectedOpt.value}</strong> for{' '}
-              <strong className="text-white">${selectedOpt.value}</strong> of credit.
-              {selectedOpt.bonus && <> <span className="text-green-400">{selectedOpt.bonus} bonus credit</span> will also be applied.</>}
-            </p>
-            <hr className="payment-modal-divider" />
-            {defaultCard && (
-              <div className="flex items-center gap-6 px-5 py-3 text-sm text-gray-400">
-                <span>Card <span className="text-gray-200 ml-1">{defaultCard.brand} ending in {defaultCard.number.slice(-4)}</span></span>
-                <span>Expiry <span className="text-gray-200 ml-1">{defaultCard.exp}</span></span>
+
+            {purchasing ? (
+              <div className="flex flex-col items-center gap-4 px-5 py-10">
+                <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-gray-300 text-center">Processing your payment…</p>
+                <p className="text-xs text-gray-500 text-center">Please do not close this window.</p>
               </div>
+            ) : (
+              <>
+                <p className="text-sm text-gray-300 px-5 py-4">
+                  Your card will be charged{' '}
+                  <strong className="text-white">${selectedOpt.value}</strong> for{' '}
+                  <strong className="text-white">${selectedOpt.value}</strong> of credit.
+                  {selectedOpt.bonus && <> <span className="text-green-400">{selectedOpt.bonus} bonus credit</span> will also be applied.</>}
+                </p>
+                <hr className="payment-modal-divider" />
+                {defaultCard && (
+                  <div className="flex items-center gap-6 px-5 py-3 text-sm text-gray-400">
+                    <span>Card <span className="text-gray-200 ml-1">{defaultCard.brand} ending in {defaultCard.number.slice(-4)}</span></span>
+                    <span>Expiry <span className="text-gray-200 ml-1">{defaultCard.exp}</span></span>
+                  </div>
+                )}
+                <hr className="payment-modal-divider" />
+                <div className="flex items-center gap-3 px-5 py-4 justify-end">
+                  <button type="button" className="payment-confirm-btn" onClick={handlePrepay}>Confirm</button>
+                  <button type="button" className="payment-cancel-btn" onClick={() => setShowConfirm(false)}>Cancel</button>
+                </div>
+              </>
             )}
-            <hr className="payment-modal-divider" />
-            <div className="flex items-center gap-3 px-5 py-4 justify-end">
-              <button type="button" className="payment-confirm-btn" disabled={purchasing}
-                onClick={handlePrepay}>
-                {purchasing ? 'Processing…' : 'Confirm'}
-              </button>
-              <button type="button" className="payment-cancel-btn" onClick={() => setShowConfirm(false)}>Cancel</button>
-            </div>
           </div>
         </div>
       )}
