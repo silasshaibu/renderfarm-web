@@ -2093,20 +2093,204 @@ ${rows.map(t => `<tr>
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TAB: SITE CONTROLS (super admin only)
+// ─────────────────────────────────────────────────────────────────────────────
+interface ReviewReferral { id: number; createdAt: string; ipMatch: boolean; referrerEmail: string; refereeEmail: string }
+interface AdminAnnouncement { id: string; title: string; message: string; type: string; audience: string; showUntil: string | null; dismissible: boolean; isActive: boolean }
+
+function SiteControlsTab() {
+  const toast = useToast()
+  const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+  const authHdr = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+
+  const [referralOn, setReferralOn]   = useState(true)
+  const [maintOn,    setMaintOn]      = useState(false)
+  const [maintMsg,   setMaintMsg]     = useState('')
+  const [reviews,    setReviews]      = useState<ReviewReferral[]>([])
+  const [savingS,    setSavingS]      = useState(false)
+
+  const [anns,    setAnns]    = useState<AdminAnnouncement[]>([])
+  const [annForm, setAnnForm] = useState({ title: '', message: '', type: 'info', audience: 'all', showUntil: '', dismissible: true })
+  const [posting, setPosting] = useState(false)
+
+  const loadSettings = () => {
+    fetch('/api/admin/site-settings', { headers: authHdr })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return
+        setReferralOn(Boolean(d.referralProgramEnabled))
+        setMaintOn(Boolean(d.maintenanceMode))
+        setMaintMsg(d.maintenanceMessage ?? '')
+        setReviews(d.reviewReferrals ?? [])
+      }).catch(() => null)
+  }
+  const loadAnns = () => {
+    fetch('/api/admin/announcements', { headers: authHdr })
+      .then(r => r.ok ? r.json() : [])
+      .then(setAnns).catch(() => null)
+  }
+  useEffect(() => { loadSettings(); loadAnns() }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveSettings = async (patch: Record<string, unknown>) => {
+    setSavingS(true)
+    const ok = await fetch('/api/admin/site-settings', { method: 'PATCH', headers: authHdr, body: JSON.stringify(patch) })
+      .then(r => r.ok).catch(() => false)
+    setSavingS(false)
+    if (ok) toast.success('Settings saved.'); else toast.error('Failed to save.')
+  }
+
+  const approve = async (id: number) => {
+    const ok = await fetch('/api/admin/site-settings', { method: 'POST', headers: authHdr, body: JSON.stringify({ action: 'approveReferral', referralId: id }) })
+      .then(r => r.ok).catch(() => false)
+    if (ok) { toast.success('Referral approved & paid.'); setReviews(prev => prev.filter(r => r.id !== id)) }
+    else toast.error('Approve failed.')
+  }
+
+  const createAnn = async () => {
+    if (!annForm.title.trim() || !annForm.message.trim()) { toast.error('Title and message required.'); return }
+    setPosting(true)
+    const ok = await fetch('/api/admin/announcements', {
+      method: 'POST', headers: authHdr,
+      body: JSON.stringify({ ...annForm, showUntil: annForm.showUntil || null }),
+    }).then(r => r.ok).catch(() => false)
+    setPosting(false)
+    if (ok) { toast.success('Announcement posted.'); setAnnForm({ title: '', message: '', type: 'info', audience: 'all', showUntil: '', dismissible: true }); loadAnns() }
+    else toast.error('Failed to post.')
+  }
+
+  const annAction = async (id: string, action: string) => {
+    const ok = await fetch('/api/admin/announcements', { method: 'PATCH', headers: authHdr, body: JSON.stringify({ id, action }) })
+      .then(r => r.ok).catch(() => false)
+    if (ok) loadAnns(); else toast.error('Action failed.')
+  }
+
+  return (
+    <div className="flex flex-col gap-6 max-w-3xl">
+      {/* Referral Program */}
+      <div className="calc-card">
+        <h2 className="text-sm font-semibold text-gray-300 mb-4 pb-3 border-b border-white/10">Referral Program</h2>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" checked={referralOn}
+            onChange={e => { setReferralOn(e.target.checked); saveSettings({ referralProgramEnabled: e.target.checked }) }} />
+          <span className="text-sm text-gray-200">Referral program {referralOn ? 'enabled' : 'disabled'}</span>
+        </label>
+        <p className="text-xs text-gray-500 mt-2">Auto-pay cap: 50 per referrer · pending referrals expire after 60 days.</p>
+
+        {reviews.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs text-gray-400 mb-2">Held for review ({reviews.length}):</p>
+            <div className="flex flex-col gap-2">
+              {reviews.map(r => (
+                <div key={r.id} className="flex items-center gap-3 text-xs bg-white/5 border border-white/10 rounded px-3 py-2">
+                  <span className="text-gray-300">{r.referrerEmail} ← {r.refereeEmail}</span>
+                  {r.ipMatch && <span className="text-amber-400">⚠ same IP</span>}
+                  <button type="button" onClick={() => approve(r.id)}
+                    className="ml-auto text-blue-400 hover:text-blue-300">Approve & pay</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Maintenance Mode */}
+      <div className="calc-card">
+        <h2 className="text-sm font-semibold text-gray-300 mb-4 pb-3 border-b border-white/10">Maintenance Mode</h2>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" checked={maintOn}
+            onChange={e => { setMaintOn(e.target.checked); saveSettings({ maintenanceMode: e.target.checked }) }} />
+          <span className="text-sm text-gray-200">Show “Under Construction” to all non-super-admin users</span>
+        </label>
+        <label className="block text-xs text-gray-500 uppercase tracking-wider font-medium mt-4 mb-2">Message (optional)</label>
+        <textarea value={maintMsg} onChange={e => setMaintMsg(e.target.value)} rows={2}
+          placeholder="We’ll be back shortly…" aria-label="Maintenance message"
+          className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 text-sm text-white" />
+        <button type="button" disabled={savingS} onClick={() => saveSettings({ maintenanceMessage: maintMsg })}
+          className="mt-2 px-4 py-2 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white">
+          Save message
+        </button>
+      </div>
+
+      {/* Announcements */}
+      <div className="calc-card">
+        <h2 className="text-sm font-semibold text-gray-300 mb-4 pb-3 border-b border-white/10">Announcements</h2>
+        <div className="flex flex-col gap-3">
+          <input type="text" placeholder="Title" value={annForm.title}
+            onChange={e => setAnnForm({ ...annForm, title: e.target.value })}
+            aria-label="Announcement title"
+            className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 text-sm text-white" />
+          <textarea placeholder="Message" rows={2} value={annForm.message}
+            onChange={e => setAnnForm({ ...annForm, message: e.target.value })}
+            aria-label="Announcement message"
+            className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 text-sm text-white" />
+          <div className="grid grid-cols-2 gap-3">
+            <select value={annForm.type} onChange={e => setAnnForm({ ...annForm, type: e.target.value })}
+              aria-label="Announcement type" className="calc-input">
+              <option value="info">Info</option><option value="success">Success</option>
+              <option value="warning">Warning</option><option value="error">Error</option>
+            </select>
+            <select value={annForm.audience} onChange={e => setAnnForm({ ...annForm, audience: e.target.value })}
+              aria-label="Announcement audience" className="calc-input">
+              <option value="all">All users</option><option value="admins">Admins only</option>
+            </select>
+          </div>
+          <label className="block text-xs text-gray-500">Show until (optional)
+            <input type="datetime-local" value={annForm.showUntil}
+              onChange={e => setAnnForm({ ...annForm, showUntil: e.target.value })}
+              aria-label="Show until"
+              className="w-full mt-1 px-3 py-2 rounded bg-white/5 border border-white/10 text-sm text-white" />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-300">
+            <input type="checkbox" checked={annForm.dismissible}
+              onChange={e => setAnnForm({ ...annForm, dismissible: e.target.checked })} />
+            Users can dismiss
+          </label>
+          <button type="button" disabled={posting} onClick={createAnn}
+            className="self-start px-4 py-2 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white">
+            {posting ? 'Posting…' : 'Post Announcement'}
+          </button>
+        </div>
+
+        {anns.length > 0 && (
+          <div className="mt-5 flex flex-col gap-2">
+            {anns.map(a => (
+              <div key={a.id} className="flex items-center gap-3 text-xs bg-white/5 border border-white/10 rounded px-3 py-2">
+                <span className={`px-1.5 py-0.5 rounded ${a.isActive ? 'bg-green-900 text-green-200' : 'bg-gray-700 text-gray-400'}`}>
+                  {a.isActive ? 'active' : 'off'}
+                </span>
+                <span className="text-gray-200 font-medium">{a.title}</span>
+                <span className="text-gray-500">{a.type} · {a.audience}</span>
+                <span className="ml-auto flex gap-3">
+                  <button type="button" onClick={() => annAction(a.id, a.isActive ? 'deactivate' : 'activate')}
+                    className="text-blue-400 hover:text-blue-300">{a.isActive ? 'Deactivate' : 'Activate'}</button>
+                  <button type="button" onClick={() => annAction(a.id, 'delete')}
+                    className="text-red-400 hover:text-red-300">Delete</button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tab config + Page
 // ─────────────────────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'overview',  label: 'Overview',            Panel: OverviewTab   },
-  { id: 'users',     label: 'Users',               Panel: UsersTab      },
-  { id: 'limits',    label: 'Cost Limits',         Panel: CostLimitsTab },
-  { id: 'projects',  label: 'Projects',            Panel: ProjectsTab   },
-  { id: 'sessions',  label: 'Sessions',            Panel: SessionsTab   },
-  { id: 'storage',   label: 'Storage',             Panel: StorageTab    },
-  { id: 'payment',   label: 'Payment Information', Panel: PaymentTab    },
+  { id: 'overview',  label: 'Overview',            Panel: OverviewTab    },
+  { id: 'users',     label: 'Users',               Panel: UsersTab       },
+  { id: 'limits',    label: 'Cost Limits',         Panel: CostLimitsTab  },
+  { id: 'projects',  label: 'Projects',            Panel: ProjectsTab    },
+  { id: 'sessions',  label: 'Sessions',            Panel: SessionsTab    },
+  { id: 'storage',   label: 'Storage',             Panel: StorageTab     },
+  { id: 'payment',   label: 'Payment Information', Panel: PaymentTab     },
+  { id: 'controls',  label: 'Site Controls',       Panel: SiteControlsTab },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 
-const SUPER_ADMIN_ONLY = new Set<TabId>(['overview', 'storage'])
+const SUPER_ADMIN_ONLY = new Set<TabId>(['overview', 'storage', 'controls'])
 
 export default function AdminPage() {
   const router = useRouter()

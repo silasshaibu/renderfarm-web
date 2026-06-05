@@ -511,7 +511,7 @@ function NotificationsSection() {
 function ReferralSection() {
   const [data, setData] = useState<{
     link: string; code: string; pending: number; credited: number; earned: number
-    reward: number; qualifyCharge: number
+    reward: number; qualifyCharge: number; enabled: boolean
   } | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -528,7 +528,7 @@ function ReferralSection() {
     })
   }
 
-  if (!data) return null
+  if (!data || !data.enabled) return null
 
   return (
     <Card title="Refer a Friend">

@@ -1,10 +1,13 @@
 import { sql, initDB } from './db'
 import { addCredit } from './credits'
-import { hasActiveCard, getAmountCharged } from './billing'
+import { getAmountCharged } from './billing'
+import { isReferralEnabled } from './siteSettings'
 import { sendEmail, baseUrl } from './email'
 
 export const REFERRAL_REWARD = 15.00          // each side earns this
 export const REFERRAL_QUALIFY_CHARGE = 15.00  // referee must pay this much real money first
+export const REFERRAL_AUTO_CAP = 50           // auto-pay up to this many per referrer; beyond -> review
+export const REFERRAL_PENDING_EXPIRY_DAYS = 60 // pending referrals older than this lapse
 
 export async function ensureReferralSchema(): Promise<void> {
   await initDB()
@@ -80,6 +83,7 @@ export async function recordReferralSignup(
   refereeIp?: string
 ): Promise<void> {
   if (!code) return
+  if (!(await isReferralEnabled())) return // program turned off by super admin
   await ensureReferralSchema()
 
   const refRows = await sql`
@@ -106,17 +110,55 @@ export async function recordReferralSignup(
   await sql`UPDATE users SET referred_by = ${referrerId} WHERE id = ${refereeId}`.catch(() => null)
 }
 
+/** Pay both sides of a referral and email them. Assumes the row is already claimed. */
+async function payBothSides(referrerId: number, refereeId: number): Promise<void> {
+  await addCredit({
+    userId: referrerId,
+    amount: REFERRAL_REWARD,
+    type: 'referral',
+    description: `Referral reward — a friend you referred paid $${REFERRAL_QUALIFY_CHARGE.toFixed(0)}`,
+  })
+  await addCredit({
+    userId: refereeId,
+    amount: REFERRAL_REWARD,
+    type: 'referral',
+    description: `Referral bonus — welcome from the friend who invited you`,
+  })
+
+  const emailRows = await sql`
+    SELECT id, email FROM users WHERE id IN (${referrerId}, ${refereeId})
+  ` as Record<string, unknown>[]
+  for (const r of emailRows) {
+    const email = r.email as string | undefined
+    if (!email) continue
+    const isReferrer = Number(r.id) === referrerId
+    sendEmail({
+      to: email,
+      subject: `🎉 You earned $${REFERRAL_REWARD.toFixed(0)} rendering credit`,
+      html: `
+        <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0f1117;border-radius:8px;color:#e2e8f0">
+          <h2 style="color:#fff;margin-top:0">$${REFERRAL_REWARD.toFixed(0)} Rendering Credit Added</h2>
+          <p style="color:#94a3b8;">${isReferrer
+            ? 'A friend you referred just became an active renderer — your $15 reward is in your account.'
+            : 'Thanks for getting started! Your $15 referral bonus has been added to your account.'}</p>
+          <a href="${baseUrl()}/" style="display:inline-block;margin-top:16px;padding:12px 24px;background:#2563eb;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Go to Dashboard →</a>
+        </div>`,
+    }).catch(() => null)
+  }
+}
+
 /**
- * Double-sided payout: once the referee has paid >= $15 of real money to their
- * card, BOTH the referrer and the referee each receive $15 rendering credit.
- * Idempotent — safe to call repeatedly after any charge event.
+ * Double-sided payout: once the referee has paid >= $15 of real money, BOTH
+ * sides each receive $15 rendering credit. Idempotent. Honors program toggle,
+ * pending-expiry, and the per-referrer auto-cap (beyond cap -> 'review').
  */
 export async function creditReferralIfQualified(refereeId: number): Promise<boolean> {
   try {
+    if (!(await isReferralEnabled())) return false
     await ensureReferralSchema()
 
     const rows = await sql`
-      SELECT id, referrer_id FROM referrals
+      SELECT id, referrer_id, created_at FROM referrals
       WHERE referee_id = ${refereeId} AND status = 'pending'
       LIMIT 1
     ` as Record<string, unknown>[]
@@ -125,59 +167,82 @@ export async function creditReferralIfQualified(refereeId: number): Promise<bool
     const referralId = Number(rows[0].id)
     const referrerId = Number(rows[0].referrer_id)
 
+    // Expiry: lapse stale pending referrals
+    const ageMs = Date.now() - new Date(rows[0].created_at as string).getTime()
+    if (ageMs > REFERRAL_PENDING_EXPIRY_DAYS * 24 * 60 * 60 * 1000) {
+      await sql`UPDATE referrals SET status = 'expired' WHERE id = ${referralId} AND status = 'pending'`.catch(() => null)
+      return false
+    }
+
     // Gate: referee must have actually paid >= $15 of real money (settled charges)
     const charged = await getAmountCharged(refereeId)
     if (charged < REFERRAL_QUALIFY_CHARGE) return false
 
-    // Atomically claim the referral so we never double-pay
+    // Cap: beyond the per-referrer auto-cap, hold for manual review (no payout)
+    const capRows = await sql`
+      SELECT COUNT(*) AS cnt FROM referrals WHERE referrer_id = ${referrerId} AND status = 'credited'
+    ` as Record<string, unknown>[]
+    const creditedCount = Number(capRows[0]?.cnt ?? 0)
+
+    if (creditedCount >= REFERRAL_AUTO_CAP) {
+      await sql`UPDATE referrals SET status = 'review' WHERE id = ${referralId} AND status = 'pending'`.catch(() => null)
+      return false
+    }
+
+    // Atomically claim so we never double-pay
     const claimed = await sql`
       UPDATE referrals SET status = 'credited', credited_at = NOW()
       WHERE id = ${referralId} AND status = 'pending'
       RETURNING id
     ` as Record<string, unknown>[]
-    if (!claimed.length) return false // someone else credited it
+    if (!claimed.length) return false
 
-    // Pay BOTH sides
-    await addCredit({
-      userId: referrerId,
-      amount: REFERRAL_REWARD,
-      type: 'referral',
-      description: `Referral reward — a friend you referred paid $${REFERRAL_QUALIFY_CHARGE.toFixed(0)}`,
-    })
-    await addCredit({
-      userId: refereeId,
-      amount: REFERRAL_REWARD,
-      type: 'referral',
-      description: `Referral bonus — welcome from the friend who invited you`,
-    })
-
-    // Email both
-    const emailRows = await sql`
-      SELECT id, email FROM users WHERE id IN (${referrerId}, ${refereeId})
-    ` as Record<string, unknown>[]
-    for (const r of emailRows) {
-      const email = r.email as string | undefined
-      if (!email) continue
-      const isReferrer = Number(r.id) === referrerId
-      sendEmail({
-        to: email,
-        subject: `🎉 You earned $${REFERRAL_REWARD.toFixed(0)} rendering credit`,
-        html: `
-          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0f1117;border-radius:8px;color:#e2e8f0">
-            <h2 style="color:#fff;margin-top:0">$${REFERRAL_REWARD.toFixed(0)} Rendering Credit Added</h2>
-            <p style="color:#94a3b8;">${isReferrer
-              ? 'A friend you referred just became an active renderer — your $15 reward is in your account.'
-              : 'Thanks for getting started! Your $15 referral bonus has been added to your account.'}</p>
-            <a href="${baseUrl()}/" style="display:inline-block;margin-top:16px;padding:12px 24px;background:#2563eb;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Go to Dashboard →</a>
-          </div>`,
-      }).catch(() => null)
-    }
-
+    await payBothSides(referrerId, refereeId)
     return true
   } catch (e) {
     console.error('[referrals] creditReferralIfQualified error:', e)
     return false
   }
+}
+
+/** Super-admin: approve a referral that was held for review → pays both sides. */
+export async function approveReviewReferral(referralId: number): Promise<boolean> {
+  try {
+    await ensureReferralSchema()
+    const claimed = await sql`
+      UPDATE referrals SET status = 'credited', credited_at = NOW()
+      WHERE id = ${referralId} AND status = 'review'
+      RETURNING referrer_id, referee_id
+    ` as Record<string, unknown>[]
+    if (!claimed.length) return false
+    await payBothSides(Number(claimed[0].referrer_id), Number(claimed[0].referee_id))
+    return true
+  } catch (e) {
+    console.error('[referrals] approveReviewReferral error:', e)
+    return false
+  }
+}
+
+/** Super-admin: list referrals held for review (with emails). */
+export async function listReviewReferrals() {
+  await ensureReferralSchema()
+  const rows = await sql`
+    SELECT r.id, r.created_at, r.ip_match,
+           rr.email AS referrer_email, re.email AS referee_email
+    FROM referrals r
+    JOIN users rr ON rr.id = r.referrer_id
+    JOIN users re ON re.id = r.referee_id
+    WHERE r.status = 'review'
+    ORDER BY r.created_at ASC
+    LIMIT 200
+  ` as Record<string, unknown>[]
+  return rows.map(r => ({
+    id: Number(r.id),
+    createdAt: String(r.created_at),
+    ipMatch: Boolean(r.ip_match),
+    referrerEmail: String(r.referrer_email ?? ''),
+    refereeEmail: String(r.referee_email ?? ''),
+  }))
 }
 
 /** Stats for the user's referral dashboard card. */
@@ -204,5 +269,6 @@ export async function getReferralStats(userId: number) {
     earned: Math.round(earned * 100) / 100,
     reward: REFERRAL_REWARD,
     qualifyCharge: REFERRAL_QUALIFY_CHARGE,
+    enabled: await isReferralEnabled(),
   }
 }

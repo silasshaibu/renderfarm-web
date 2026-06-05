@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Sidebar from './Sidebar'
+import AnnouncementBanner from './AnnouncementBanner'
 
 const YEAR = new Date().getFullYear()
 const AUTH_PATHS = ['/login', '/logout', '/register']
@@ -78,12 +79,50 @@ function CreditBadge() {
   )
 }
 
+function isSuperAdminFromToken(): boolean {
+  try {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') : null
+    if (!token) return false
+    return Boolean(JSON.parse(atob(token.split('.')[1]))?.isSuperAdmin)
+  } catch { return false }
+}
+
+function UnderConstruction({ message }: { message: string }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center text-center px-6 bg-[#0f1117]">
+      <div className="text-5xl mb-4">🚧</div>
+      <h1 className="text-2xl font-bold text-white mb-2">Under Construction</h1>
+      <p className="text-gray-400 max-w-md whitespace-pre-line">
+        {message || 'We’re making improvements and will be back shortly. Thanks for your patience.'}
+      </p>
+    </div>
+  )
+}
+
 export default function ShellClient({ children }: { children: React.ReactNode }) {
   const pathname     = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [maintenance, setMaintenance] = useState<{ on: boolean; message: string } | null>(null)
+  const superAdmin = isSuperAdminFromToken()
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('rf_token') ?? '' : ''
+    if (!token) return
+    fetch('/api/site-status', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then((s: { maintenanceMode?: boolean; maintenanceMessage?: string } | null) => {
+        if (s) setMaintenance({ on: Boolean(s.maintenanceMode), message: s.maintenanceMessage ?? '' })
+      })
+      .catch(() => null)
+  }, [])
 
   if (AUTH_PATHS.includes(pathname) || pathname.startsWith('/cms')) {
     return <>{children}</>
+  }
+
+  // Maintenance gate — non-super-admins see Under Construction
+  if (maintenance?.on && !superAdmin) {
+    return <UnderConstruction message={maintenance.message} />
   }
 
   return (
@@ -129,7 +168,14 @@ export default function ShellClient({ children }: { children: React.ReactNode })
           </div>
         </header>
 
+        {maintenance?.on && superAdmin && (
+          <div className="bg-amber-950/60 border-b border-amber-700/50 text-amber-200 text-xs px-4 md:px-6 py-2">
+            ⚠ Maintenance mode is ON — regular users see “Under Construction”. You have access as a super admin.
+          </div>
+        )}
+
         <main className="flex-1 overflow-auto px-4 md:px-6 py-5 md:py-6">
+          <AnnouncementBanner />
           {children}
         </main>
 
