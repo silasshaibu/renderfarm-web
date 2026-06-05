@@ -104,9 +104,12 @@ nvidia-smi || { echo "ERROR: nvidia-smi failed — GPU driver not ready"; exit 1
   const localScene  = `/tmp/scene_${jobId}_${chunkIndex}.blend`
   const localOutput = `/tmp/output_${jobId}_${chunkIndex}`
 
-  // Rewrite render command to use local paths
+  // Rewrite render command to use local paths.
+  // --python rf_remap.py runs after the file loads and before render, remapping
+  // dependency asset paths to where we downloaded them (no-op if none).
   const renderCmdLocal = isMultiFrame
     ? `${blender} -b "${localScene}" \\
+  --python /tmp/rf_remap.py \\
   --python-expr "import bpy; bpy.context.scene.cycles.use_denoising = False" \\
   -E CYCLES \\
   ${cyclesDevice} \\
@@ -114,6 +117,7 @@ nvidia-smi || { echo "ERROR: nvidia-smi failed — GPU driver not ready"; exit 1
   -s ${startFrame} -e ${endFrame} \\
   -F PNG -a`
     : `${blender} -b "${localScene}" \\
+  --python /tmp/rf_remap.py \\
   --python-expr "import bpy; bpy.context.scene.cycles.use_denoising = False" \\
   -E CYCLES \\
   ${cyclesDevice} \\
@@ -140,6 +144,65 @@ mkdir -p "${localOutput}"
 echo "Downloading scene: gs://${GCP_BUCKET}/${gcsScenePath}"
 gsutil cp "gs://${GCP_BUCKET}/${gcsScenePath}" "${localScene}"
 echo "Scene downloaded: $(du -sh ${localScene} | cut -f1)"
+
+# ── 2b. Download dependency assets + build a path-remap map ────────────────────
+mkdir -p /tmp/rf_assets
+curl -s -H "Authorization: Bearer ${internalSecret}" \\
+  "${appUrl}/api/gcp/job-assets?jobId=${jobId}" -o /tmp/rf_assets.json || echo '[]' > /tmp/rf_assets.json
+
+cat > /tmp/rf_fetch.py <<'PYEOF'
+import json, os, urllib.request
+try:
+    assets = json.load(open("/tmp/rf_assets.json"))
+except Exception:
+    assets = []
+mapping = {}
+for a in assets:
+    url  = a.get("blob_url"); name = a.get("name") or ""
+    if not url or not name:
+        continue
+    dest = os.path.join("/tmp/rf_assets", name)
+    try:
+        urllib.request.urlretrieve(url, dest)
+        mapping[name] = dest
+        print("fetched asset:", name)
+    except Exception as e:
+        print("WARN asset fetch failed:", name, e)
+json.dump(mapping, open("/tmp/rf_remap_map.json", "w"))
+print("assets ready:", len(mapping))
+PYEOF
+python3 /tmp/rf_fetch.py || echo "asset fetch step failed (continuing)"
+
+# remap.py runs inside Blender (--python) before the render to fix asset paths
+cat > /tmp/rf_remap.py <<'PYEOF'
+import bpy, os, json
+try:
+    m = json.load(open("/tmp/rf_remap_map.json"))
+except Exception:
+    m = {}
+def fix(block):
+    try:
+        fp = getattr(block, "filepath", "")
+        if not fp:
+            return
+        base = os.path.basename(fp.replace("\\\\", "/"))
+        if base in m:
+            block.filepath = m[base]
+    except Exception:
+        pass
+for coll in (bpy.data.images, bpy.data.libraries, bpy.data.fonts,
+             bpy.data.sounds, bpy.data.cache_files):
+    for b in coll:
+        fix(b)
+for v in getattr(bpy.data, "volumes", []):
+    fix(v)
+if m:
+    try:
+        bpy.ops.file.make_paths_absolute()
+    except Exception:
+        pass
+print("path remap applied for", len(m), "asset(s)")
+PYEOF
 
 # ── 3. Run Blender render on local disk (frames ${startFrame}–${endFrame}) ────
 echo "Rendering job=${jobId} chunk=${chunkIndex} frames=${startFrame}-${endFrame} software=${software} gpu=${useGpu}"
