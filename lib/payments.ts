@@ -179,6 +179,12 @@ export async function chargeAndCredit(
     description: `Stripe prepay $${amountUSD}${bonus ? ` + $${bonus} bonus` : ''}`,
   })
 
+  // Referral payout — real money was just charged; pays both sides if >= $15 total.
+  // Dynamic import avoids a circular dependency (referrals.ts imports payments.ts).
+  import('./referrals')
+    .then(m => m.creditReferralIfQualified(Number(userId)))
+    .catch(() => null)
+
   return { ok: true, transactionId: txRows[0].id as string, creditsAdded: total }
 }
 

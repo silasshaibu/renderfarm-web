@@ -68,6 +68,20 @@ export async function getUsageConsumed(userId: number): Promise<number> {
   return Math.abs(Number(rows[0]?.s ?? 0))
 }
 
+/** Total real money charged to the user's card (settled transactions, both tables). */
+export async function getAmountCharged(userId: number): Promise<number> {
+  await ensureBillingSchema()
+  const pt = await sql`
+    SELECT COALESCE(SUM(amount), 0) AS s FROM payment_transactions
+    WHERE user_id = ${String(userId)} AND status = 'settled'
+  `.catch(() => [{ s: 0 }]) as Record<string, unknown>[]
+  const tx = await sql`
+    SELECT COALESCE(SUM(amount), 0) AS s FROM transactions
+    WHERE user_id = ${userId} AND status = 'settled'
+  `.catch(() => [{ s: 0 }]) as Record<string, unknown>[]
+  return Number(pt[0]?.s ?? 0) + Number(tx[0]?.s ?? 0)
+}
+
 /**
  * A cardless user must add a card once they've consumed the free-usage cap.
  * Once a card is on file, the gate never applies again.
@@ -348,6 +362,10 @@ async function chargeUserForOutstanding(user: {
         WHERE id = ${user.id}
       `
       await sendBillingSuccessEmail(user.email, amountOwed, defaultCard.last4, intent.id)
+      // Referral payout — real money charged; pays both sides if >= $15 total
+      import('./referrals')
+        .then(m => m.creditReferralIfQualified(user.id))
+        .catch(() => null)
       return 'settled'
     }
 

@@ -4,7 +4,6 @@ import { INTERNAL_SECRET } from '@/lib/gcp/clients'
 import { getSignedDownloadUrls } from '@/lib/gcp/storage'
 import { syncJobStatus } from '@/lib/jobs/sync'
 import { ensureCreditSchema, addCredit, getBalance, maybeSendLowBalanceEmail, checkOverdraftStatus } from '@/lib/credits'
-import { creditReferralIfQualified } from '@/lib/referrals'
 import { sendJobNotification, ensureNotificationSchema } from '@/lib/notifications'
 
 // POST { jobId, frame, status }
@@ -114,8 +113,6 @@ export async function POST(req: NextRequest) {
           if (userEmail) await maybeSendLowBalanceEmail(jobUserId, userEmail, newBalance)
           // Overdraft check — may kill jobs if limit exceeded
           void checkOverdraftStatus(jobUserId, newBalance)
-          // Referral payout — pays referrer once this user crosses the $15 spend gate
-          void creditReferralIfQualified(jobUserId)
         }
       }
     } catch (e) {

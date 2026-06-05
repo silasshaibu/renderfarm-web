@@ -198,7 +198,7 @@ export default function RegisterPage() {
 
           {referralCode && (
             <div className={s.referralNote}>
-              🎁 You were referred by a friend — sign up and start rendering to help them earn $15 credit.
+              🎁 A friend invited you — once you pay $15 to your account, you both get $15 free rendering credit.
             </div>
           )}
 

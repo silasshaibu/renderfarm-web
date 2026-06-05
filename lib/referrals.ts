@@ -1,10 +1,10 @@
 import { sql, initDB } from './db'
 import { addCredit } from './credits'
-import { hasActiveCard, getUsageConsumed } from './billing'
+import { hasActiveCard, getAmountCharged } from './billing'
 import { sendEmail, baseUrl } from './email'
 
-export const REFERRAL_REWARD = 15.00
-export const REFERRAL_SPEND_REQUIREMENT = 15.00
+export const REFERRAL_REWARD = 15.00          // each side earns this
+export const REFERRAL_QUALIFY_CHARGE = 15.00  // referee must pay this much real money first
 
 export async function ensureReferralSchema(): Promise<void> {
   await initDB()
@@ -107,8 +107,9 @@ export async function recordReferralSignup(
 }
 
 /**
- * Pay the referrer once the referee has a card on file AND has spent >= $15.
- * Idempotent — safe to call repeatedly (e.g. on every task-complete).
+ * Double-sided payout: once the referee has paid >= $15 of real money to their
+ * card, BOTH the referrer and the referee each receive $15 rendering credit.
+ * Idempotent — safe to call repeatedly after any charge event.
  */
 export async function creditReferralIfQualified(refereeId: number): Promise<boolean> {
   try {
@@ -124,11 +125,9 @@ export async function creditReferralIfQualified(refereeId: number): Promise<bool
     const referralId = Number(rows[0].id)
     const referrerId = Number(rows[0].referrer_id)
 
-    // Both gates: card on file AND >= $15 of real spend
-    const cardOk = await hasActiveCard(refereeId)
-    if (!cardOk) return false
-    const spend = await getUsageConsumed(refereeId)
-    if (spend < REFERRAL_SPEND_REQUIREMENT) return false
+    // Gate: referee must have actually paid >= $15 of real money (settled charges)
+    const charged = await getAmountCharged(refereeId)
+    if (charged < REFERRAL_QUALIFY_CHARGE) return false
 
     // Atomically claim the referral so we never double-pay
     const claimed = await sql`
@@ -138,25 +137,37 @@ export async function creditReferralIfQualified(refereeId: number): Promise<bool
     ` as Record<string, unknown>[]
     if (!claimed.length) return false // someone else credited it
 
-    // Grant the referrer their rendering credit
+    // Pay BOTH sides
     await addCredit({
       userId: referrerId,
       amount: REFERRAL_REWARD,
       type: 'referral',
-      description: `Referral reward — friend reached $${REFERRAL_SPEND_REQUIREMENT.toFixed(0)} of rendering`,
+      description: `Referral reward — a friend you referred paid $${REFERRAL_QUALIFY_CHARGE.toFixed(0)}`,
+    })
+    await addCredit({
+      userId: refereeId,
+      amount: REFERRAL_REWARD,
+      type: 'referral',
+      description: `Referral bonus — welcome from the friend who invited you`,
     })
 
-    // Email the referrer
-    const refRows = await sql`SELECT email FROM users WHERE id = ${referrerId} LIMIT 1` as Record<string, unknown>[]
-    const email = refRows[0]?.email as string | undefined
-    if (email) {
+    // Email both
+    const emailRows = await sql`
+      SELECT id, email FROM users WHERE id IN (${referrerId}, ${refereeId})
+    ` as Record<string, unknown>[]
+    for (const r of emailRows) {
+      const email = r.email as string | undefined
+      if (!email) continue
+      const isReferrer = Number(r.id) === referrerId
       sendEmail({
         to: email,
         subject: `🎉 You earned $${REFERRAL_REWARD.toFixed(0)} rendering credit`,
         html: `
           <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0f1117;border-radius:8px;color:#e2e8f0">
-            <h2 style="color:#fff;margin-top:0">Referral Reward Earned</h2>
-            <p style="color:#94a3b8;">A friend you referred is now an active renderer — <strong>$${REFERRAL_REWARD.toFixed(2)}</strong> of rendering credit has been added to your account.</p>
+            <h2 style="color:#fff;margin-top:0">$${REFERRAL_REWARD.toFixed(0)} Rendering Credit Added</h2>
+            <p style="color:#94a3b8;">${isReferrer
+              ? 'A friend you referred just became an active renderer — your $15 reward is in your account.'
+              : 'Thanks for getting started! Your $15 referral bonus has been added to your account.'}</p>
             <a href="${baseUrl()}/" style="display:inline-block;margin-top:16px;padding:12px 24px;background:#2563eb;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Go to Dashboard →</a>
           </div>`,
       }).catch(() => null)
@@ -192,6 +203,6 @@ export async function getReferralStats(userId: number) {
     credited,
     earned: Math.round(earned * 100) / 100,
     reward: REFERRAL_REWARD,
-    spendRequirement: REFERRAL_SPEND_REQUIREMENT,
+    qualifyCharge: REFERRAL_QUALIFY_CHARGE,
   }
 }

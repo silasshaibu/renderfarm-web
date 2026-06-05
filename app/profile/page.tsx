@@ -511,7 +511,7 @@ function NotificationsSection() {
 function ReferralSection() {
   const [data, setData] = useState<{
     link: string; code: string; pending: number; credited: number; earned: number
-    reward: number; spendRequirement: number
+    reward: number; qualifyCharge: number
   } | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -535,12 +535,12 @@ function ReferralSection() {
       <div className="flex flex-col gap-4">
         <div>
           <p className="text-sm text-gray-200">
-            Refer a friend and earn{' '}
-            <span className="text-green-400 font-semibold">${data.reward.toFixed(0)} rendering credit</span>.
+            Refer a friend —{' '}
+            <span className="text-green-400 font-semibold">you both get ${data.reward.toFixed(0)} rendering credit</span>.
           </p>
           <p className="text-xs text-gray-500 mt-1">
-            You earn ${data.reward.toFixed(0)} once your friend adds a payment card and renders at least
-            ${data.spendRequirement.toFixed(0)} of work. Credit applies to future renders.
+            You each earn ${data.reward.toFixed(0)} once your friend pays ${data.qualifyCharge.toFixed(0)} to their
+            account. Credit can only be spent on rendering.
           </p>
         </div>
 
