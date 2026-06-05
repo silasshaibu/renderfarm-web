@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { sql, initDB } from '@/lib/db'
 import { JWT_SECRET, makeJti } from '@/lib/auth-server'
 import { ensureCreditSchema, normalizeEmail, detectAbuse, grantWelcomeBonus } from '@/lib/credits'
+import { recordReferralSignup } from '@/lib/referrals'
 
 function getCallerAdmin(req: NextRequest): boolean {
   // If the request carries a valid admin JWT, the caller is an admin
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest) {
       country?:     string
       phone?:       string
       isAdmin?:     boolean   // only honoured when caller has admin JWT
+      referralCode?: string
     }
 
     const { firstName, lastName, email, password, accountName, company, country, phone } = body
@@ -89,6 +91,11 @@ export async function POST(req: NextRequest) {
     `
 
     const user = rows[0] as { id: number; email: string; is_admin: boolean }
+
+    // ── Referral attribution (if signed up via a referral link) ───────────────
+    if (body.referralCode) {
+      await recordReferralSignup(user.id, body.referralCode, ip).catch(() => null)
+    }
 
     // ── Abuse detection + welcome bonus ───────────────────────────────────────
     const abuse = await detectAbuse({ userId: user.id, email: emailNorm, normEmail, ip })

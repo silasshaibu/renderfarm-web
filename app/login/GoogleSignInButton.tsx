@@ -29,10 +29,13 @@ export default function GoogleSignInButton({ port }: { port: string | null }) {
     const handleCredential = async (response: GoogleCredentialResponse) => {
       setError('')
       try {
+        const referralCode = typeof window !== 'undefined'
+          ? localStorage.getItem('rf_referral') ?? undefined
+          : undefined
         const res = await fetch('/api/auth/google', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ credential: response.credential }),
+          body: JSON.stringify({ credential: response.credential, referralCode }),
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.message ?? 'Google sign-in failed')

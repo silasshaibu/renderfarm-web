@@ -506,6 +506,85 @@ function NotificationsSection() {
   )
 }
 
+// Refer a Friend section
+// ---------------------------------------------------------------------------
+function ReferralSection() {
+  const [data, setData] = useState<{
+    link: string; code: string; pending: number; credited: number; earned: number
+    reward: number; spendRequirement: number
+  } | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    apiFetch('/api/profile/referrals')
+      .then(d => setData(d as typeof data))
+      .catch(() => null)
+  }, [])
+
+  const copy = () => {
+    if (!data) return
+    navigator.clipboard.writeText(data.link).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  if (!data) return null
+
+  return (
+    <Card title="Refer a Friend">
+      <div className="flex flex-col gap-4">
+        <div>
+          <p className="text-sm text-gray-200">
+            Refer a friend and earn{' '}
+            <span className="text-green-400 font-semibold">${data.reward.toFixed(0)} rendering credit</span>.
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            You earn ${data.reward.toFixed(0)} once your friend adds a payment card and renders at least
+            ${data.spendRequirement.toFixed(0)} of work. Credit applies to future renders.
+          </p>
+        </div>
+
+        <div>
+          <label className="text-xs text-gray-500 uppercase tracking-wider font-medium block mb-2">
+            Your referral link
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              value={data.link}
+              aria-label="Your referral link"
+              onFocus={e => e.currentTarget.select()}
+              className="flex-1 text-sm text-gray-200 py-2 px-3 rounded bg-white/5 border border-white/10 font-mono"
+            />
+            <button type="button" onClick={copy}
+              className="px-4 py-2 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors whitespace-nowrap">
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex gap-6 pt-1">
+          <div>
+            <div className="text-2xl font-bold text-white">{data.pending + data.credited}</div>
+            <div className="text-xs text-gray-500">Friends joined</div>
+          </div>
+          <div>
+            <div className="text-2xl font-bold text-green-400">${data.earned.toFixed(2)}</div>
+            <div className="text-xs text-gray-500">Credit earned</div>
+          </div>
+          {data.pending > 0 && (
+            <div>
+              <div className="text-2xl font-bold text-amber-400">{data.pending}</div>
+              <div className="text-xs text-gray-500">Pending (not yet qualified)</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 // Storage Settings section
 // ---------------------------------------------------------------------------
 function StorageSettingsSection() {
@@ -1039,6 +1118,9 @@ export default function ProfilePage() {
           </div>
         </Card>
       </div>
+
+      {/* Refer a Friend */}
+      <ReferralSection />
 
       {/* Notification Preferences */}
       <NotificationsSection />

@@ -94,7 +94,7 @@ export async function ensureCreditSchema() {
       user_id     INTEGER NOT NULL,
       amount      NUMERIC(12,4) NOT NULL,
       type        TEXT NOT NULL CHECK (type IN (
-                    'welcome_bonus','purchased','admin_grant','refund','usage'
+                    'welcome_bonus','purchased','admin_grant','refund','usage','referral'
                   )),
       description TEXT NOT NULL DEFAULT '',
       job_id      INTEGER DEFAULT NULL,

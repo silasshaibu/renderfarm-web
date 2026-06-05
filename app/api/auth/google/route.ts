@@ -5,6 +5,7 @@ import { sql, initDB } from '@/lib/db'
 import { JWT_SECRET, SESSION_TTL_MS, makeJti } from '@/lib/auth-server'
 import { getIP } from '@/lib/rateLimit'
 import { grantWelcomeBonus } from '@/lib/credits'
+import { recordReferralSignup } from '@/lib/referrals'
 
 interface GoogleTokenInfo {
   aud: string
@@ -18,7 +19,7 @@ interface GoogleTokenInfo {
 
 export async function POST(req: NextRequest) {
   try {
-    const { credential } = await req.json() as { credential?: string }
+    const { credential, referralCode } = await req.json() as { credential?: string; referralCode?: string }
     if (!credential) {
       return NextResponse.json({ message: 'Missing Google credential' }, { status: 400 })
     }
@@ -85,10 +86,13 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Grant welcome bonus for brand-new Google users
+    // Grant welcome bonus + referral attribution for brand-new Google users
     if (isNew) {
       const firstName = (info.given_name ?? name ?? 'there').split(' ')[0]
       await grantWelcomeBonus(user.id, email, firstName).catch(() => null)
+      if (referralCode) {
+        await recordReferralSignup(user.id, referralCode, getIP(req.headers)).catch(() => null)
+      }
     }
 
     // Strict 1-session-per-user

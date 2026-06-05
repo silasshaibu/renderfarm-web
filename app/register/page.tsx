@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { setToken } from '@/lib/auth'
@@ -75,6 +75,19 @@ export default function RegisterPage() {
   const [error,         setError]         = useState('')
   const [onboarding,    setOnboarding]    = useState(false)
   const [bonusPending,  setBonusPending]  = useState(false)
+  const [referralCode,  setReferralCode]  = useState('')
+
+  // Capture ?ref= referral code (persist for the Google sign-in flow too)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const fromUrl = new URLSearchParams(window.location.search).get('ref')
+    const stored  = localStorage.getItem('rf_referral')
+    const code = (fromUrl || stored || '').toUpperCase()
+    if (code) {
+      setReferralCode(code)
+      localStorage.setItem('rf_referral', code)
+    }
+  }, [])
 
   const set = (k: keyof typeof form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -114,6 +127,7 @@ export default function RegisterPage() {
           company:     form.company,
           country:     form.country,
           phone:       form.phone,
+          referralCode: referralCode || undefined,
         }),
       })
 
@@ -181,6 +195,12 @@ export default function RegisterPage() {
         <div className={s.box}>
 
           {error && <div className={s.error}>{error}</div>}
+
+          {referralCode && (
+            <div className={s.referralNote}>
+              🎁 You were referred by a friend — sign up and start rendering to help them earn $15 credit.
+            </div>
+          )}
 
           <form onSubmit={handleSubmit}>
 

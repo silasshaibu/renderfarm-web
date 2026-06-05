@@ -401,3 +401,13 @@
 }
 
 .onboardingSecondary:hover { border-color: #888; color: #e5e7eb; }
+
+.referralNote {
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(37, 99, 235, 0.4);
+  color: #93c5fd;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}

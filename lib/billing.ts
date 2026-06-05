@@ -173,6 +173,12 @@ export async function savePaymentMethod(
   // Release any jobs that were held only because a card was required
   await releaseCardHeldJobs(userId).catch(() => null)
 
+  // Referral payout re-check (no-op unless they've also spent >= $15).
+  // Dynamic import avoids a circular dependency (referrals.ts imports billing.ts).
+  import('./referrals')
+    .then(m => m.creditReferralIfQualified(userId))
+    .catch(() => null)
+
   if (isFirst) {
     await sql`UPDATE payment_methods SET is_default = FALSE WHERE user_id = ${userId} AND stripe_pm_id != ${paymentMethodId}`
   }
