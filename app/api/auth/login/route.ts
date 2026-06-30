@@ -28,7 +28,8 @@ async function flagRapidSessions(userId: number, ip: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json() as { email?: string; password?: string }
+    const { email, password, clientType: rawClientType } = await req.json() as { email?: string; password?: string; clientType?: string }
+    const clientType = rawClientType === 'electron' ? 'electron' : 'web'
     if (!email || !password) {
       return NextResponse.json({ message: 'Email and password are required' }, { status: 400 })
     }
@@ -68,8 +69,8 @@ export async function POST(req: NextRequest) {
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS invited BOOLEAN DEFAULT FALSE`.catch(() => null)
     await sql`UPDATE users SET invited = FALSE WHERE id = ${user.id} AND invited = TRUE`.catch(() => null)
 
-    // Strict 1-session-per-user: delete ALL existing sessions before creating new one
-    await sql`DELETE FROM user_sessions WHERE user_id = ${user.id}`.catch(() => null)
+    // Evict only the prior session for this client type — other clients (web/electron) are unaffected
+    await sql`DELETE FROM user_sessions WHERE user_id = ${user.id} AND source = ${clientType}`.catch(() => null)
 
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS)
     const jti       = makeJti()
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
     const userAgent = req.headers.get('user-agent') ?? ''
     await sql`
       INSERT INTO user_sessions (user_id, jti, ip_address, user_agent, expires_at, source, last_used_at)
-      VALUES (${user.id}, ${jti}, ${ip}, ${userAgent}, ${expiresAt.toISOString()}, 'dashboard', NOW())
+      VALUES (${user.id}, ${jti}, ${ip}, ${userAgent}, ${expiresAt.toISOString()}, ${clientType}, NOW())
       ON CONFLICT (jti) DO NOTHING
     `
 

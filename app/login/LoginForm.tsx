@@ -28,7 +28,7 @@ export default function LoginForm({ port }: Props) {
       const res = await fetch('/api/auth/login', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email, password }),
+        body:    JSON.stringify({ email, password, clientType: port ? 'electron' : 'web' }),
       })
 
       const data = await res.json()

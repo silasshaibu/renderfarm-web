@@ -35,7 +35,7 @@ export default function GoogleSignInButton({ port }: { port: string | null }) {
         const res = await fetch('/api/auth/google', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ credential: response.credential, referralCode }),
+          body: JSON.stringify({ credential: response.credential, referralCode, clientType: port ? 'electron' : 'web' }),
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.message ?? 'Google sign-in failed')

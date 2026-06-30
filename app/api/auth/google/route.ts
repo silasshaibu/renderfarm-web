@@ -19,7 +19,8 @@ interface GoogleTokenInfo {
 
 export async function POST(req: NextRequest) {
   try {
-    const { credential, referralCode } = await req.json() as { credential?: string; referralCode?: string }
+    const { credential, referralCode, clientType: rawClientType } = await req.json() as { credential?: string; referralCode?: string; clientType?: string }
+    const clientType = rawClientType === 'electron' ? 'electron' : 'web'
     if (!credential) {
       return NextResponse.json({ message: 'Missing Google credential' }, { status: 400 })
     }
@@ -95,8 +96,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Strict 1-session-per-user
-    await sql`DELETE FROM user_sessions WHERE user_id = ${user.id}`.catch(() => null)
+    // Evict only the prior session for this client type — other clients (web/electron) are unaffected
+    await sql`DELETE FROM user_sessions WHERE user_id = ${user.id} AND source = ${clientType}`.catch(() => null)
 
     const ip        = getIP(req.headers)
     const userAgent = req.headers.get('user-agent') ?? ''
@@ -111,7 +112,7 @@ export async function POST(req: NextRequest) {
 
     await sql`
       INSERT INTO user_sessions (user_id, jti, ip_address, user_agent, expires_at, source, last_used_at)
-      VALUES (${user.id}, ${jti}, ${ip}, ${userAgent}, ${expiresAt.toISOString()}, 'dashboard', NOW())
+      VALUES (${user.id}, ${jti}, ${ip}, ${userAgent}, ${expiresAt.toISOString()}, ${clientType}, NOW())
       ON CONFLICT (jti) DO NOTHING
     `
 
