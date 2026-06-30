@@ -34,6 +34,16 @@ export interface Job {
   cost?:       number   // USD, computed from task timing
 }
 
+// Software identifiers sent by DCC submitters
+export type JobSoftware =
+  | 'blender-3-3-lts' | 'blender-3-4' | 'blender-3-5' | 'blender-3-6-lts'
+  | 'blender-4-0'     | 'blender-4-1' | 'blender-4-2-lts'
+  | 'maya-2022'    | 'maya-2023'    | 'maya-2024'    | 'maya-2025'
+  | 'houdini-19.5' | 'houdini-20.0' | 'houdini-20.5'
+  | 'cinema4d-2023' | 'cinema4d-2024' | 'cinema4d-2025'
+  | '3dsmax-2022'  | '3dsmax-2023'  | '3dsmax-2024'  | '3dsmax-2025'
+  | (string & {})   // allow future values without breaking existing code
+
 // Table sort direction
 export type SortDir = 'asc' | 'desc'
 
